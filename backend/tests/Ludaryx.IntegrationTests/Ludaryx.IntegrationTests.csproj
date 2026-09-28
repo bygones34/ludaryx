@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ludaryx.Api\Ludaryx.Api.csproj" />
+    <ProjectReference Include="..\..\src\Ludaryx.Infrastructure\Ludaryx.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

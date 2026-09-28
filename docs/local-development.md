@@ -29,7 +29,9 @@ $connectionBuilder['Password'] = $localSettings['POSTGRES_PASSWORD']
 
 The configuration contract is `ConnectionStrings:LudaryxDatabase` (accessible
 through `GetConnectionString("LudaryxDatabase")`). In Development, ASP.NET Core
-loads user-secrets automatically. No database client is wired into the API yet.
+loads user-secrets automatically. Infrastructure registers `LudaryxDbContext`
+with EF Core and Npgsql. API startup fails with a configuration error if the
+connection string is missing or blank.
 User-secrets are stored outside the repository and are for local development.
 
 PostgreSQL uses the official `postgres:18` image. The host mapping is
@@ -43,3 +45,18 @@ Use `docker compose ps` to inspect readiness. The health check runs
 `docker compose down -v` deletes local database data. Environment credentials
 initialize a new volume only: editing `.env` does not change the password of
 an existing database. Keep `.env` and the API user-secret synchronized.
+
+## Backend integration tests
+
+The complete backend test suite requires the local PostgreSQL service to be
+healthy and the API user-secret configured as above:
+
+```powershell
+docker compose up -d --wait
+dotnet test backend/Ludaryx.sln
+```
+
+The connectivity test creates the API host in Development, resolves the
+registered DbContext, and calls `Database.CanConnectAsync()`. It does not
+create tables, apply migrations, or change data. M0 contains no migrations;
+the first meaningful migration will be introduced with Identity in M1.
