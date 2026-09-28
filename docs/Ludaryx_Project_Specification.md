@@ -491,9 +491,11 @@ Complete milestones in order: **M0 → M1 → M2 → M3 → M4 → M5 → M6 →
 
 ### M0 — Project Foundation
 
-**Scope:** Create the four .NET 10 projects and two test projects; correct references and DI; React/TypeScript/Vite with Tailwind, shadcn/ui, React Router, and TanStack Query; feature folders; Docker PostgreSQL; EF Core connection and initial migration; .gitignore, .editorconfig, README, environment configuration, user-secrets, and `/health`.
+**Scope:** Create the four .NET 10 projects and two test projects; correct references and DI; React/TypeScript/Vite with Tailwind, shadcn/ui, React Router, and TanStack Query; feature folders; Docker PostgreSQL; EF Core/Npgsql configuration and application DbContext infrastructure; .gitignore, .editorconfig, README, environment configuration, user-secrets, and `/health`.
 
-**Automated tests:** Backend and frontend build; test suites run; migration applies to clean PostgreSQL; database connectivity and `/health` smoke checks. These checks consolidate the foundation acceptance requirements, rather than prescribing unnecessary placeholder tests.
+M0 verifies connectivity against real local PostgreSQL without creating an empty migration or an artificial table. The first meaningful EF Core migration and migration creation/application verification are deferred to M1, when ASP.NET Core Identity introduces the first persistent schema.
+
+**Automated tests:** Backend and frontend build; test suites run; database connectivity against real local PostgreSQL and `/health` smoke checks. These checks consolidate the foundation acceptance requirements, rather than prescribing unnecessary placeholder tests.
 
 **Manual acceptance:** On a clean setup, clone repository, start PostgreSQL with `docker compose up -d`, run API, install frontend dependencies, and run the frontend. Confirm frontend loads, database connects, and `GET /health` returns 200.
 
@@ -501,9 +503,9 @@ Complete milestones in order: **M0 → M1 → M2 → M3 → M4 → M5 → M6 →
 
 ### M1 — Authentication
 
-**Scope:** Identity; register/login/logout/refresh/current user; JWT 15 minutes and refresh seven days; rotation and HttpOnly cookie; login/register pages; auth state, protected routes, API-client handling, and session restoration.
+**Scope:** Identity and the first meaningful EF Core migration; register/login/logout/refresh/current user; JWT 15 minutes and refresh seven days; rotation and HttpOnly cookie; login/register pages; auth state, protected routes, API-client handling, and session restoration.
 
-**Automated tests:** Successful registration; duplicate email/username rejected; invalid password rejected; successful login and wrong-password rejection; protected request without token returns 401 and valid token returns 200; refresh succeeds; old token cannot be reused; logout invalidates refresh.
+**Automated tests:** Verify migration creation and application to clean PostgreSQL; successful registration; duplicate email/username rejected; invalid password rejected; successful login and wrong-password rejection; protected request without token returns 401 and valid token returns 200; refresh succeeds; old token cannot be reused; logout invalidates refresh.
 
 **Manual acceptance:** Register, login, reload browser and confirm session restoration, logout, then attempt protected navigation. Verify auth cannot be restored through the revoked refresh token.
 
