@@ -1,0 +1,61 @@
+# .NET build and package outputs
+[Bb]in/
+[Oo]bj/
+*.nupkg
+*.snupkg
+
+# Visual Studio and per-user IDE settings
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Node, Vite, and package-manager caches (keep lockfiles tracked)
+node_modules/
+dist/
+.vite/
+.npm/
+.pnpm-store/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test, coverage, and browser-test outputs
+[Tt]est[Rr]esults/
+coverage/
+*.coverage
+*.coveragexml
+test-results/
+playwright-report/
+blob-report/
+
+# Local environment files; sanitized examples remain tracked
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local secrets and developer-specific API configuration
+secrets.json
+appsettings.Local.json
+appsettings.*.Local.json
+*.pfx
+*.p12
+*.key
+
+# Editor temporary files
+*.swp
+*.swo
+*~
+
+# OS-generated files
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
