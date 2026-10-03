@@ -60,3 +60,11 @@ The connectivity test creates the API host in Development, resolves the
 registered DbContext, and calls `Database.CanConnectAsync()`. It does not
 create tables, apply migrations, or change data. M0 contains no migrations;
 the first meaningful migration will be introduced with Identity in M1.
+
+## API health check
+
+With PostgreSQL running and the API user-secret configured, start the API and
+request `GET /health`. The endpoint checks database connectivity through the
+registered DbContext. It returns HTTP 200 when PostgreSQL is reachable and
+HTTP 503 when it is not. It is an operational endpoint outside `/api/v1` and
+does not create schema or expose connection details.
