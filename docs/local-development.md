@@ -34,6 +34,21 @@ with EF Core and Npgsql. API startup fails with a configuration error if the
 connection string is missing or blank.
 User-secrets are stored outside the repository and are for local development.
 
+M1 authentication also needs a JWT signing key. Generate a separate 256-bit
+key and save it to the API user-secrets store without printing it or writing it
+to a tracked file:
+
+```powershell
+@{ 'Jwt:SigningKey' = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)) } |
+  ConvertTo-Json -Compress |
+  dotnet user-secrets set --project backend/src/Ludaryx.Api
+```
+
+`Jwt:Issuer` and `Jwt:Audience` are public values in API configuration. The
+signing key is secret; API startup fails clearly if it is missing or shorter
+than 32 decoded bytes. Use a separate environment variable for the signing key
+outside local development.
+
 PostgreSQL uses the official `postgres:18` image. The host mapping is
 `127.0.0.1:5432:5432`; API launch ports remain unchanged. The named volume
 `ludaryx_postgres_data` is mounted at `/var/lib/postgresql`. The major-version
@@ -46,20 +61,60 @@ Use `docker compose ps` to inspect readiness. The health check runs
 initialize a new volume only: editing `.env` does not change the password of
 an existing database. Keep `.env` and the API user-secret synchronized.
 
-## Backend integration tests
+## M1 authentication migrations
 
-The complete backend test suite requires the local PostgreSQL service to be
-healthy and the API user-secret configured as above:
+M1 adds the first migration for the ASP.NET Core Identity user schema and a
+second migration for refresh-session records. After PostgreSQL is healthy
+and the API connection string is configured, apply them
+from the `backend` directory before running the M1 integration tests:
 
 ```powershell
-docker compose up -d --wait
+dotnet tool restore
+dotnet ef database update --project src/Ludaryx.Infrastructure --startup-project src/Ludaryx.Api --context LudaryxDbContext
+```
+
+The local `dotnet-ef` version is pinned in `backend/dotnet-tools.json`. The
+migrations use the API's Development user-secret and create Identity user
+tables, refresh-session records, and EF's migration-history table. The
+application does not apply migrations automatically at startup. Integration
+tests check that the Identity migration was applied and exercise refresh-token
+rotation against the local database.
+
+## M1 refresh cookie and browser origin
+
+The API allows credentialed browser requests from the exact Development origin
+`https://localhost:5173`. Configure another environment's exact frontend
+origins through `Cors:AllowedOrigins` (for example,
+`Cors__AllowedOrigins__0`); the API refuses to start if none are configured.
+Refresh and logout also require a matching `Origin` header. The frontend must
+send credentials on auth requests. Login and refresh set a host-only,
+`HttpOnly`, `Secure`, `SameSite=Lax` cookie scoped to `/api/v1/auth`; the refresh
+token is never returned in JSON. Local browser testing therefore needs both
+frontend and API on HTTPS localhost.
+
+For M1 browser development, trust the ASP.NET Core development certificate
+with `dotnet dev-certs https --trust`, run the API with its `https` launch
+profile, and run `npm run dev` from `frontend`. Vite serves
+`https://localhost:5173` using a locally generated, untrusted development
+certificate; accept its browser warning for local development. The frontend
+uses `https://localhost:7034/api/v1` in development unless the public
+`VITE_API_BASE_URL` is set. Never put credentials in a Vite environment
+variable. With both origins using HTTPS localhost, the browser can send the
+refresh cookie on credentialed auth requests. The access token stays in
+JavaScript memory and is restored through refresh after a page reload.
+
+## Backend integration tests
+
+The complete backend test suite requires healthy local PostgreSQL, the API
+user-secret configured as above, and the M1 migrations applied:
+
+```powershell
 dotnet test backend/Ludaryx.sln
 ```
 
 The connectivity test creates the API host in Development, resolves the
 registered DbContext, and calls `Database.CanConnectAsync()`. It does not
-create tables, apply migrations, or change data. M0 contains no migrations;
-the first meaningful migration will be introduced with Identity in M1.
+create tables, apply migrations, or change data. M0 contains no migrations.
 
 ## API health check
 
