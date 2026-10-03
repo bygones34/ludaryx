@@ -35,5 +35,7 @@ should be reviewed before production deployment.
 
 M0 has no EF Core migrations or application tables by decision. Migration
 creation and application will be verified in M1 when Identity adds the first
-persistent schema. Browser visual inspection and setup on a separate machine
-have not been performed.
+persistent schema. The foundation page was visually inspected in the Codex
+browser from the main workspace after this clean-checkout exercise; its heading,
+description, and disabled action rendered as expected. Setup on a separate
+machine has not been performed.
