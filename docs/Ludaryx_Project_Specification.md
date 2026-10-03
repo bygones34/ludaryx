@@ -114,7 +114,7 @@ No generic repository or duplicate unit-of-work wrapper over EF Core. dnd-kit is
 
 ASP.NET Core Identity owns account identity and credentials. The API exposes `id`, `username`, `email`, `displayName`, and `createdAt` for the current user. Identity implementation belongs in Infrastructure; Domain must not depend on Identity or ASP.NET types.
 
-Username and email are unique. Username length is 3–30 characters, email must be valid, and password length is at least eight characters. The exact additional password policy and display-name initialization remain implementation decisions.
+Username and email are unique. Username length is 3–30 characters and email must be valid. Passwords must be at least 15 characters; do not require particular character classes, and support passphrases of at least 64 characters including spaces. Initialize `displayName` from `username` at registration.
 
 ### 6.2 Shared metadata
 
@@ -153,7 +153,7 @@ BacklogPriority values are `Low`, `Medium`, and `High`. Backlog is a view of Use
 
 ### 6.4 Refresh-token persistence
 
-Infrastructure needs persisted refresh-token state to support expiration, rotation, and revocation. Account linkage and token validity are required concepts. Exact storage columns, hashing, and reuse-response policy must be finalized in M1; they were not specified in the accessible discussion.
+Infrastructure persists refresh-token state for expiration, rotation, and revocation. Generate a cryptographically random 256-bit token and store only its SHA-256 hash, never the token secret. Each record needs an ID, user ID, session-family ID, unique token hash, creation and expiration times, optional revocation time, and optional replacement-token ID. A refresh token is single-use: rotation revokes the old token and issues a replacement in the same family. Reuse of an already rotated token revokes every active token in that session family, without revoking unrelated sessions.
 
 ## 7. Domain Rules
 
@@ -263,7 +263,7 @@ Login request contains `email` and `password`. Successful response:
 
 Set the refresh token in a HttpOnly, Secure cookie. Never return it in JSON. Access-token lifetime is 15 minutes; refresh-token lifetime is seven days.
 
-Refresh needs no request body; the browser sends the cookie. Return a new `accessToken` and `expiresIn: 900`, and rotate the cookie token. The old refresh token cannot be reused. Logout revokes the token and clears the cookie. Logout's exact success response is an open contract detail.
+Refresh needs no request body; the browser sends the cookie. Return a new `accessToken` and `expiresIn: 900`, and rotate the cookie token. The old refresh token cannot be reused. Logout revokes the token, clears the cookie, and returns `204 No Content`, including when no active refresh session exists.
 
 `GET /users/me` returns `id`, `username`, `email`, `displayName`, and `createdAt`.
 
@@ -372,7 +372,7 @@ Required flows: login issues both tokens, refresh rotates and invalidates the ol
 
 Resolve the current user from authenticated claims, and enforce ownership on every private query and command. Logout does not inherently revoke an already-issued stateless JWT; document its remaining validity until expiry rather than claiming immediate access-token revocation.
 
-Security implementation requirements include server validation, database constraints, reviewed rate limiting, exact allowed CORS origins, HTTPS, and safe errors. Finalize cookie SameSite, path, domain, credentials behavior, and protection for cookie-authenticated actions in M1/M9. The original contract deliberately leaves SameSite environment-dependent. Verify deployment origins and browser cookie behavior before release.
+Security implementation requirements include server validation, database constraints, reviewed rate limiting, exact allowed CORS origins, HTTPS, and safe errors. The refresh cookie is `HttpOnly`, `Secure`, host-only (no `Domain` attribute), scoped to `/api/v1/auth`, and `SameSite=Lax` when frontend and API are same-site. The browser sends credentials for auth requests; credentialed CORS allows only explicitly configured frontend origins, never a wildcard. Refresh and logout reject requests whose `Origin` does not match an allowed frontend origin. Local M1 browser development uses `https://localhost:5173` for the frontend and `https://localhost:7034` for the API so this cookie policy can be tested without relying on an HTTP localhost exception. If production domains require cross-site cookies, revisit `SameSite=None` and the corresponding CSRF protection in M9 before deployment. Verify actual deployment origins and browser cookie behavior before release.
 
 Never log passwords, access tokens, refresh tokens, or secrets. Do not commit database passwords, JWT signing secrets, or IGDB client secrets. Use .NET user-secrets locally and Render environment variables in production. Frontend configuration contains public values only; a Vite environment variable is not a secret vault.
 
@@ -665,7 +665,6 @@ The available source does not resolve the following details. Resolve and record 
 | Milestone | Details to finalize |
 |---|---|
 | M0 | Exact package versions, local ports, configuration names, health-check depth, license |
-| M1 | Additional password policy, display-name default, refresh-token schema/hash/reuse policy, cookie settings, logout response, CSRF/origin protection |
 | M2 | Missing metadata representation, not-added library shape, upstream error mapping, provider token/cache/retry/timeout policies |
 | M3 | Schema/nullability/enum storage, list defaults and bounds, complete sort vocabulary, platform filter type, PATCH null semantics, ownership error status, concurrency behavior |
 | M4 | Default/nullable backlog priority, first order value, order bounds/compaction, full versus partial reorder, response body, concurrent reorder policy |
