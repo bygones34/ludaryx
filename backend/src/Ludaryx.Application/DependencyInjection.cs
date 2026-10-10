@@ -5,6 +5,7 @@ using Ludaryx.Application.Auth.LogoutUser;
 using Ludaryx.Application.Auth.RefreshUser;
 using Ludaryx.Application.Auth.RegisterUser;
 using Ludaryx.Application.Games.SearchGames;
+using Ludaryx.Application.Games.GetGameDetails;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ludaryx.Application;
@@ -22,6 +23,8 @@ public static class DependencyInjection
         services.AddScoped<GetCurrentUserHandler>();
         services.AddScoped<IValidator<SearchGamesQuery>, SearchGamesValidator>();
         services.AddScoped<SearchGamesHandler>();
+        services.AddScoped<IValidator<GetGameDetailsQuery>, GetGameDetailsValidator>();
+        services.AddScoped<GetGameDetailsHandler>();
 
         return services;
     }
