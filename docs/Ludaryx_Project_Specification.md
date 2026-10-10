@@ -206,14 +206,18 @@ Every schema change requires a named EF Core migration committed to source contr
 - Infrastructure implements a typed HttpClient and IGDB authentication/token handling.
 - Application consumes an appropriate interface, such as `IIgdbClient`; provider DTOs remain in Infrastructure.
 - Explicitly map IGDB responses into Ludaryx response models.
-- Search validates a query of at least two characters and initially limits results to 20.
+- Search trims the query, validates a length of 2–100 characters, and initially limits results to 20. Frontend search uses a 350 ms debounce.
 - Details include cover, summary, release date, genres, platforms, and current-user library membership.
 - Persist a shared metadata snapshot when a game is first added to a library; reuse the existing shared record on later additions.
 - Handle unavailable IGDB, missing games, absent metadata, and upstream errors without crashing the application or leaking credentials.
 - Do not call live IGDB during unit tests. Mock the client for application tests and use controlled responses for mapping tests.
 - Verify real IGDB manually in M2 and during production smoke tests.
 
-No Redis is required. Metadata refresh cadence, provider-token cache mechanics, retries, timeouts, and precise upstream-error status mapping must be documented when implemented. No background synchronization service is assumed.
+Use Twitch's server-to-server client-credentials flow. Configure `Igdb:ClientId` and `Igdb:ClientSecret` through API user-secrets locally and environment variables in production; send credentials in the token request's form body. Cache the provider token only in backend memory, acquire it lazily, and renew it 60 seconds before expiry. Concurrent callers share token acquisition. On IGDB 401, invalidate the rejected token and retry once with a new token.
+
+Each outbound HTTP call has a 10-second timeout and honors caller cancellation. Limit IGDB calls within each API process to four per second and at most eight concurrent requests. Do not automatically retry 429 or 5xx responses. Return 400 for invalid discovery input, 404 for an unknown game, 503 for provider unavailability or quota exhaustion, 504 for provider timeout, and 502 for malformed provider responses or provider authentication failures. Use safe ProblemDetails without exposing raw upstream errors or credentials. Reassess coordination across multiple API instances in M9.
+
+Map the first release date to a UTC-based `YYYY-MM-DD` date. Missing cover, release date, or summary is null; missing genre/platform collections are empty arrays. M2 fetches discovery metadata from IGDB without persistent game snapshots or migrations. M3 adds snapshots and real current-user library membership when the library schema exists; metadata snapshot refresh cadence is resolved there. No Redis or background synchronization service is required.
 
 ## 10. API Contract
 
@@ -269,7 +273,7 @@ Refresh needs no request body; the browser sends the cookie. Return a new `acces
 
 ### 10.3 Discovery
 
-`GET /games/search?q=elden%20ring`: query length at least two; initial limit 20. Return `{ "items": [...] }`. Each item includes `igdbId`, `name`, `coverUrl`, `releaseDate`, and platform names.
+`GET /games/search?q=elden%20ring`: trimmed query length 2–100; initial limit 20. Return `{ "items": [...] }`. Each item includes `igdbId`, `name`, `coverUrl`, `releaseDate`, and platform names.
 
 `GET /games/igdb/{igdbId}` returns `igdbId`, `name`, `slug`, `summary`, `coverUrl`, `releaseDate`, genre objects (`igdbId`, `name`), and platform objects (`igdbId`, `name`, `abbreviation`). Include the current user's membership:
 
@@ -277,7 +281,7 @@ Refresh needs no request body; the browser sends the cookie. Return a new `acces
 { "library": { "isAdded": true, "userGameId": "<uuid>", "status": "Playing" } }
 ```
 
-Represent the not-added case consistently; its exact optional-field shape remains to be fixed in M2. No local-ID game-details endpoint is part of v1.
+The not-added case is `{ "library": { "isAdded": false, "userGameId": null, "status": null } }`. M2 returns this case because library records do not exist yet; M3 connects membership to the current user's persisted library. No local-ID game-details endpoint is part of v1.
 
 ### 10.4 Library
 

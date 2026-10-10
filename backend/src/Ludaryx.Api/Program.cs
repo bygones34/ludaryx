@@ -2,6 +2,7 @@ using Ludaryx.Api.Health;
 using Ludaryx.Application;
 using Ludaryx.Infrastructure;
 using Ludaryx.Infrastructure.Authentication;
+using Ludaryx.Infrastructure.Igdb;
 
 var builder = WebApplication.CreateBuilder(args);
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -17,6 +18,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     builder.Configuration.GetConnectionString("LudaryxDatabase"));
 builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddIgdb(builder.Configuration);
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database");
 
 var app = builder.Build();

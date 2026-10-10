@@ -103,6 +103,50 @@ variable. With both origins using HTTPS localhost, the browser can send the
 refresh cookie on credentialed auth requests. The access token stays in
 JavaScript memory and is restored through refresh after a page reload.
 
+## M2 IGDB credentials and client
+
+Create a Confidential application in the Twitch Developer Console, with
+two-factor authentication enabled on the Twitch account. IGDB uses its Client
+ID and Client Secret through the server-to-server client-credentials flow;
+Ludaryx users do not need to sign in with Twitch.
+See the [IGDB setup instructions](https://api-docs.igdb.com/#account-creation).
+
+Save both values in API user-secrets from the repository root without placing
+the secret in shell history or a tracked file:
+
+```powershell
+$igdbClientId = Read-Host 'Twitch application Client ID'
+$igdbSecret = Read-Host 'Twitch application Client Secret' -AsSecureString
+$igdbCredential = [System.Management.Automation.PSCredential]::new('igdb', $igdbSecret)
+@{
+  'Igdb:ClientId' = $igdbClientId
+  'Igdb:ClientSecret' = $igdbCredential.GetNetworkCredential().Password
+} | ConvertTo-Json -Compress | dotnet user-secrets set --project backend/src/Ludaryx.Api
+Remove-Variable igdbClientId, igdbSecret, igdbCredential
+```
+
+Production uses `Igdb__ClientId` and `Igdb__ClientSecret` environment variables.
+Restart the API after saving or changing local user-secrets.
+Do not put either value in frontend configuration. The IGDB client validates
+these settings when first resolved and acquires a token on its first request;
+registering it does not call Twitch or IGDB. Auth and health checks continue
+to work before IGDB credentials are configured.
+
+Infrastructure registers a typed `IIgdbClient`, a shared in-memory token
+provider, and a per-process outbound limiter. Twitch credentials are sent in
+the form body, never the URL. Tokens are renewed 60 seconds before expiry;
+concurrent callers share acquisition. A rejected token is invalidated and the
+IGDB request retried once; a late rejection cannot invalidate a newer token.
+Other upstream errors are not automatically retried.
+
+HTTP calls time out after ten seconds and respect caller cancellation. IGDB
+requests start at least 250 ms apart, with at most eight in flight. HTTP client
+logging is disabled for these clients; explicit logs contain only safe failure
+categories. Provider response bodies, credentials, tokens, and search text
+are not logged. Controlled-handler tests cover the client without real
+credentials or live provider requests. Live search/details acceptance remains
+a separate M2 check after the endpoints and frontend are implemented.
+
 ## Backend integration tests
 
 The complete backend test suite requires healthy local PostgreSQL, the API
