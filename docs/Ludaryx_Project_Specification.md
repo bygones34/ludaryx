@@ -166,10 +166,12 @@ Infrastructure persists refresh-token state for expiration, rotation, and revoca
 7. A new backlog item can be appended using the user's maximum BacklogOrder plus one.
 8. Reordering validates ownership, Backlog status, duplicate item IDs, and duplicate order values, then executes transactionally.
 9. Rating is null or an integer from 1 to 10, inclusive. Notes have a maximum length of 1,000 characters.
-10. Entering Playing sets StartedAt; entering Completed sets CompletedAt. Repeated transitions and date-reset semantics are not established and must be clarified before implementation.
+10. First entry into Playing sets StartedAt; first entry into Completed sets CompletedAt. Later transitions preserve these historical timestamps. Clients cannot edit dates directly.
 11. Dashboard counts and lists contain only the current user's records. Null ratings are excluded from the average. Up Next respects BacklogOrder.
 
 Validation is separate from business conflicts: invalid rating is `400`; an already-owned game is `409`. Client validation improves usability but never substitutes for server validation and database constraints.
+
+An omitted backlog priority defaults to null. Backlog order starts at 1 and new or returning backlog items append at the current maximum plus one. Leaving Backlog clears priority and order. A non-null priority for a non-Backlog status is invalid input and returns 400. Reordering remains M4 work.
 
 ## 8. Database Design
 
@@ -198,7 +200,13 @@ Index ownership queries and common library/backlog access paths based on real qu
 
 Shared-game creation must handle concurrent additions without duplicate snapshots. Backlog ordering must remain valid during transactional updates, including any uniqueness constraints; verify this with real PostgreSQL integration tests.
 
-Every schema change requires a named EF Core migration committed to source control. Verify migration application against a clean database. Production migrations are a deliberate deployment step. Exact column nullability, enum storage, index definitions, cascade behavior for account deletion, and concurrency policy remain to be finalized during the relevant milestones.
+M3 uses UUID local identifiers and positive bigint IGDB identifiers. Game name and slug, Genre name, and Platform name are required; Game summary, cover URL, release date, and Platform abbreviation are nullable. UserGame ownership, game reference, status, AddedAt, and UpdatedAt are required; priority, backlog order, rating, personal note, StartedAt, and CompletedAt are nullable. Missing provider metadata must not be replaced with artificial values.
+
+Store status and priority as enum names in text columns, with CHECK constraints for allowed values. Store UTC lifecycle timestamps as PostgreSQL timestamptz and release dates as date. Deleting an account cascades to its UserGame records while preserving shared metadata; deleting a UserGame never deletes its Game. Enforce the rating, note-length, and backlog-field rules in the database as well as application validation.
+
+Create shared metadata and UserGame within one database transaction. Resolve concurrent metadata uniqueness conflicts by re-reading the existing shared records. Serialize a user's library mutations by locking that user's row, so concurrent additions, backlog append calculations, and updates remain consistent. Database uniqueness constraints remain authoritative; a duplicate user/game addition returns 409.
+
+Every schema change requires a named EF Core migration committed to source control. Verify migration application against a clean database. Production migrations are a deliberate deployment step. Add indexes based on actual queries; no speculative indexes are required by these decisions.
 
 ## 9. IGDB Integration Strategy
 
@@ -217,7 +225,7 @@ Use Twitch's server-to-server client-credentials flow. Configure `Igdb:ClientId`
 
 Each outbound HTTP call has a 10-second timeout and honors caller cancellation. Limit IGDB calls within each API process to four per second and at most eight concurrent requests. Do not automatically retry 429 or 5xx responses. Return 400 for invalid discovery input, 404 for an unknown game, 503 for provider unavailability or quota exhaustion, 504 for provider timeout, and 502 for malformed provider responses or provider authentication failures. Use safe ProblemDetails without exposing raw upstream errors or credentials. Reassess coordination across multiple API instances in M9.
 
-Map the first release date to a UTC-based `YYYY-MM-DD` date. Missing cover, release date, or summary is null; missing genre/platform collections are empty arrays. M2 fetches discovery metadata from IGDB without persistent game snapshots or migrations. M3 adds snapshots and real current-user library membership when the library schema exists; metadata snapshot refresh cadence is resolved there. No Redis or background synchronization service is required.
+Map the first release date to a UTC-based `YYYY-MM-DD` date. Missing cover, release date, or summary is null; missing genre/platform collections are empty arrays. M2 fetches discovery metadata from IGDB without persistent game snapshots or migrations. M3 adds snapshots and real current-user library membership when the library schema exists. Capture metadata on first add and reuse existing shared records for later additions; M3 performs no automatic snapshot refresh. No Redis or background synchronization service is required.
 
 ## 10. API Contract
 
@@ -293,15 +301,21 @@ Add request:
 
 Resolve or create the shared Game snapshot, then create the owned UserGame. Return `201 Created` with `id`, a `game` object (`id`, `igdbId`, `name`, `coverUrl`), `status`, `priority`, `backlogOrder`, `rating`, `personalNote`, and `addedAt`. Duplicate ownership returns `409`.
 
+POST requires a positive igdbId and a valid status. Priority is optional and defaults to null; a non-null priority is accepted only for Backlog. Resolve ownership from the authenticated user, never a client-supplied user ID.
+
 List supports `status`, `platform`, `rating`, `priority`, `sort`, `page`, `pageSize`, and `search`.
 
 ```http
 GET /api/v1/library?status=Completed&sort=ratingDesc&page=1&pageSize=20
 ```
 
-Response has `items`, `page`, `pageSize`, `totalCount`, and `totalPages`. Items include ID, game summary, status, rating, priority, addedAt, and completedAt. Page-size bounds, full sort vocabulary, defaults, and platform-filter identifier type must be fixed in M3; the example does not establish all defaults.
+Response has `items`, `page`, `pageSize`, `totalCount`, and `totalPages`. Items include ID, game summary, status, rating, priority, addedAt, and completedAt. Defaults are page=1, pageSize=20, and sort=addedAtDesc. Page must be positive and pageSize must be 1–100; invalid input returns 400. An empty result has totalPages=0. A page beyond the last page returns an empty items array with the actual counts.
 
-Library detail returns shared game summary/details, genres/platforms, and all personal fields including StartedAt, CompletedAt, and UpdatedAt. Enforce ownership for detail, update, and delete.
+Search trims input, allows at most 100 characters, and performs a case-insensitive literal substring match on game name. An empty search applies no search filter. Platform is a positive Platform.IgdbId, rating is an exact integer match from 1 to 10, and status/priority must be valid enum names. Supplied filters combine with AND.
+
+Supported sort values are addedAtDesc, addedAtAsc, nameAsc, nameDesc, ratingAsc, ratingDesc, completedAtAsc, and completedAtDesc. Nullable sort values always come last. Break ties using UserGame.Id ascending to keep pagination deterministic. Unsupported sort values return 400.
+
+Library detail returns shared game summary/details, genres/platforms, and all personal fields including StartedAt, CompletedAt, and UpdatedAt. Enforce ownership for detail, update, and delete. A missing record or a record belonging to another user returns the same 404 response for GET, PATCH, and DELETE.
 
 PATCH accepts partial updates, for example:
 
@@ -309,7 +323,7 @@ PATCH accepts partial updates, for example:
 { "status": "Completed", "rating": 10, "personalNote": "Excellent ending." }
 ```
 
-Success: `200 OK` with the updated UserGame DTO. Rating alone can be patched. Support nullable rating and priority; note length and enums are validated. Omitted fields must remain unchanged; document explicit-null semantics in M3/M5. Status-driven rules are applied on the server. Do not add separate rating or notes endpoints. Direct editing of dates was not specified.
+Success: `200 OK` with the updated UserGame DTO. Rating alone can be patched. Support nullable rating and priority; note length and enums are validated. Omitted fields remain unchanged. Explicit null clears rating, priority, or personalNote; status=null and an empty PATCH return 400. Apply status-driven rules to the resulting record on the server. Do not add separate rating or notes endpoints. Clients cannot edit dates directly. The rating and note editing UI remains M5 work.
 
 Delete succeeds with `204 No Content`, removing only UserGame.
 
@@ -670,9 +684,9 @@ The available source does not resolve the following details. Resolve and record 
 |---|---|
 | M0 | Exact package versions, local ports, configuration names, health-check depth, license |
 | M2 | Missing metadata representation, not-added library shape, upstream error mapping, provider token/cache/retry/timeout policies |
-| M3 | Schema/nullability/enum storage, list defaults and bounds, complete sort vocabulary, platform filter type, PATCH null semantics, ownership error status, concurrency behavior |
-| M4 | Default/nullable backlog priority, first order value, order bounds/compaction, full versus partial reorder, response body, concurrent reorder policy |
-| M5 | Timestamp overwrite/reset rules for repeat transitions and reversals; whether dates are editable |
+| M3 | Foundation decisions resolved in Sections 7–10: schema/nullability/enum storage, list behavior, PATCH semantics, ownership responses, snapshots, and concurrency |
+| M4 | Order bounds/compaction, full versus partial reorder, response body, and concurrent reorder policy; nullable priority and initial order resolved in M3.1 |
+| M5 | Timestamp preservation and non-editable dates resolved in Section 7; rating and note editing UI remains M5 scope |
 | M6 | Empty average, precision/rounding, Currently Playing order and list limits, Up Next limit |
 | M9 | Domains, cookie topology, provider configuration, migration/recovery/backup procedures |
 
