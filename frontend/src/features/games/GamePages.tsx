@@ -5,6 +5,9 @@ import { Button } from '@/components/ui/button'
 import { ApiError } from '@/lib/apiClient'
 import { GameCover } from './GameCover'
 import { getGameDetails, searchGames } from './gamesApi'
+import { useAuth } from '@/features/auth/useAuth'
+import { AddToLibrary } from '@/features/library/AddToLibrary'
+import { gameDetailsKey } from '@/features/library/libraryQueries'
 
 function QueryError({ error, retry }: { error: Error; retry: () => void }) {
   const message = error instanceof ApiError && error.status === 404
@@ -77,6 +80,7 @@ export function GameSearchPage() {
 }
 
 export function GameDetailsPage() {
+  const userId = useAuth().user?.id
   const { igdbId } = useParams()
   const location = useLocation()
   const previousSearch = (location.state as { search?: string } | null)?.search
@@ -84,7 +88,7 @@ export function GameDetailsPage() {
   const id = Number(igdbId)
   const valid = /^\d+$/.test(igdbId ?? '') && Number.isSafeInteger(id) && id > 0
   const details = useQuery({
-    queryKey: ['games', 'details', id],
+    queryKey: gameDetailsKey(userId, id),
     queryFn: ({ signal }) => getGameDetails(id, signal),
     enabled: valid,
     retry: false,
@@ -98,6 +102,7 @@ export function GameDetailsPage() {
       <GameCover url={details.data.coverUrl} name={details.data.name} />
       <div className="space-y-6">
         <h1 className="text-3xl font-semibold tracking-tight">{details.data.name}</h1>
+        <AddToLibrary key={details.data.igdbId} game={details.data} />
         <dl className="space-y-4">
           <div><dt className="text-sm font-medium text-muted-foreground">Release date</dt><dd>{details.data.releaseDate ?? 'Release date unavailable'}</dd></div>
           <div><dt className="text-sm font-medium text-muted-foreground">Genres</dt><dd>{details.data.genres.map(genre => genre.name).join(' · ') || 'Genres unavailable'}</dd></div>

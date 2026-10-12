@@ -22,6 +22,7 @@ export function AppShell() {
         <nav aria-label="Main navigation" className="flex flex-1 gap-4 text-sm">
           <NavLink to="/" end className={({ isActive }) => isActive ? 'font-semibold underline underline-offset-4' : 'text-muted-foreground'}>Home</NavLink>
           <NavLink to="/games" className={({ isActive }) => isActive ? 'font-semibold underline underline-offset-4' : 'text-muted-foreground'}>Discover</NavLink>
+          <NavLink to="/library" className={({ isActive }) => isActive ? 'font-semibold underline underline-offset-4' : 'text-muted-foreground'}>My library</NavLink>
         </nav>
         <Button variant="outline" disabled={busy} onClick={signOut}>{busy ? 'Signing out…' : 'Sign out'}</Button>
       </div>
