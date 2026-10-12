@@ -2,10 +2,10 @@ using FluentValidation;
 
 namespace Ludaryx.Application.Games.GetGameDetails;
 
-public sealed class GetGameDetailsHandler(IValidator<GetGameDetailsQuery> validator, IIgdbClient games)
+public sealed class GetGameDetailsHandler(IValidator<GetGameDetailsQuery> validator, IIgdbClient games, IGameLibraryMembership membership)
 {
     public async Task<GetGameDetailsResult> HandleAsync(
-        GetGameDetailsQuery query, CancellationToken cancellationToken)
+        Guid userId, GetGameDetailsQuery query, CancellationToken cancellationToken)
     {
         var validation = await validator.ValidateAsync(query, cancellationToken);
         if (!validation.IsValid)
@@ -19,10 +19,10 @@ public sealed class GetGameDetailsHandler(IValidator<GetGameDetailsQuery> valida
         var game = await games.GetDetailsAsync(query.IgdbId, cancellationToken);
         if (game is null) return new GetGameDetailsResult.NotFound();
 
-        // M2 has no library records; M3 will resolve the current user's persisted membership.
+        var library = await membership.GetAsync(userId, query.IgdbId, cancellationToken);
         return new GetGameDetailsResult.Found(new GameDetailsResponse(
             game.IgdbId, game.Name, game.Slug, game.Summary, game.CoverUrl,
             game.ReleaseDate, game.Genres, game.Platforms,
-            new GameLibraryMembership(false, null, null)));
+            library));
     }
 }

@@ -47,4 +47,26 @@ public sealed class UserGame
     public DateTimeOffset UpdatedAt { get; private set; }
     public DateTimeOffset? StartedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
+
+    public void Update(GameStatus status, BacklogPriority? priority, int? backlogOrder,
+        int? rating, string? personalNote, DateTimeOffset updatedAt)
+    {
+        if (!Enum.IsDefined(status)) throw new ArgumentOutOfRangeException(nameof(status));
+        if (priority is { } value && !Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(priority));
+        if (status == GameStatus.Backlog && backlogOrder is null or <= 0)
+            throw new ArgumentOutOfRangeException(nameof(backlogOrder));
+        if (status != GameStatus.Backlog && (priority is not null || backlogOrder is not null))
+            throw new ArgumentException("Priority and order apply only to Backlog.");
+        if (rating is < 1 or > 10) throw new ArgumentOutOfRangeException(nameof(rating));
+        if (personalNote?.Length > 1000) throw new ArgumentException("Personal note must not exceed 1000 characters.", nameof(personalNote));
+
+        Status = status;
+        Priority = priority;
+        BacklogOrder = backlogOrder;
+        Rating = rating;
+        PersonalNote = personalNote;
+        UpdatedAt = updatedAt.ToUniversalTime();
+        if (status == GameStatus.Playing) StartedAt ??= UpdatedAt;
+        if (status == GameStatus.Completed) CompletedAt ??= UpdatedAt;
+    }
 }

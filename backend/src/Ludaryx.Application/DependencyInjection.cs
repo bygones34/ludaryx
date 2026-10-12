@@ -6,6 +6,11 @@ using Ludaryx.Application.Auth.RefreshUser;
 using Ludaryx.Application.Auth.RegisterUser;
 using Ludaryx.Application.Games.SearchGames;
 using Ludaryx.Application.Games.GetGameDetails;
+using Ludaryx.Application.Library.AddGame;
+using Ludaryx.Application.Library.ListLibrary;
+using Ludaryx.Application.Library.GetLibraryItem;
+using Ludaryx.Application.Library.UpdateLibraryItem;
+using Ludaryx.Application.Library.DeleteLibraryItem;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Ludaryx.Application;
@@ -25,6 +30,14 @@ public static class DependencyInjection
         services.AddScoped<SearchGamesHandler>();
         services.AddScoped<IValidator<GetGameDetailsQuery>, GetGameDetailsValidator>();
         services.AddScoped<GetGameDetailsHandler>();
+        services.AddScoped<IValidator<AddGameCommand>, AddGameValidator>();
+        services.AddScoped<AddGameHandler>();
+        services.AddScoped<IValidator<ListLibraryQuery>, ListLibraryValidator>();
+        services.AddScoped<ListLibraryHandler>();
+        services.AddScoped<GetLibraryItemHandler>();
+        services.AddScoped<IValidator<UpdateLibraryCommand>, UpdateLibraryValidator>();
+        services.AddScoped<UpdateLibraryHandler>();
+        services.AddScoped<DeleteLibraryItemHandler>();
 
         return services;
     }

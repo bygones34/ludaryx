@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Ludaryx.Application.Games;
+using Ludaryx.Application.Games.GetGameDetails;
 using Ludaryx.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -150,6 +151,8 @@ public class GameDetailsTests
             {
                 services.RemoveAll<IIgdbClient>();
                 services.AddSingleton<IIgdbClient>(provider);
+                services.RemoveAll<IGameLibraryMembership>();
+                services.AddSingleton<IGameLibraryMembership>(new StubMembership());
             });
         });
 
@@ -167,6 +170,12 @@ public class GameDetailsTests
                 "Bearer", new JwtSecurityTokenHandler().WriteToken(token));
         }
         return client;
+    }
+
+    private sealed class StubMembership : IGameLibraryMembership
+    {
+        public Task<GameLibraryMembership> GetAsync(Guid userId, long igdbId, CancellationToken cancellationToken) =>
+            Task.FromResult(new GameLibraryMembership(false, null, null));
     }
 
     private sealed class StubClient : IIgdbClient

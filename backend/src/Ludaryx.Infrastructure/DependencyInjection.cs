@@ -3,6 +3,10 @@ using Ludaryx.Application.Auth.RegisterUser;
 using Ludaryx.Infrastructure.Authentication;
 using Ludaryx.Infrastructure.Identity;
 using Ludaryx.Infrastructure.Persistence;
+using Ludaryx.Application.Library.AddGame;
+using Ludaryx.Infrastructure.Library;
+using Ludaryx.Application.Library;
+using Ludaryx.Application.Games.GetGameDetails;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +43,11 @@ public static class DependencyInjection
         services.AddScoped<IUserRegistrationStore, IdentityUserRegistrationStore>();
         services.AddScoped<IUserAccountStore, IdentityUserAccountStore>();
         services.AddScoped<IRefreshSessionStore, EfRefreshSessionStore>();
+        services.AddScoped<ILibraryAdditionStore, EfLibraryAdditionStore>();
+        services.AddScoped<EfLibraryQueryStore>();
+        services.AddScoped<ILibraryQueryStore>(provider => provider.GetRequiredService<EfLibraryQueryStore>());
+        services.AddScoped<IGameLibraryMembership>(provider => provider.GetRequiredService<EfLibraryQueryStore>());
+        services.AddScoped<ILibraryMutationStore, EfLibraryMutationStore>();
 
         return services;
     }

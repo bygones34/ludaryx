@@ -12,9 +12,9 @@ public class GetGameDetailsTests
     public async Task Invalid_ID_does_not_call_the_provider(long id)
     {
         var provider = new StubClient();
-        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider);
+        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider, new StubMembership());
         var result = Assert.IsType<GetGameDetailsResult.Invalid>(await handler.HandleAsync(
-            new GetGameDetailsQuery(id), CancellationToken.None));
+            Guid.NewGuid(), new GetGameDetailsQuery(id), CancellationToken.None));
         Assert.NotEmpty(result.Errors["igdbId"]);
         Assert.Null(provider.Id);
     }
@@ -25,10 +25,10 @@ public class GetGameDetailsTests
     public async Task Valid_ID_and_cancellation_are_forwarded_and_missing_game_is_not_found(long id)
     {
         var provider = new StubClient();
-        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider);
+        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider, new StubMembership());
         using var cancellation = new CancellationTokenSource();
         Assert.IsType<GetGameDetailsResult.NotFound>(await handler.HandleAsync(
-            new GetGameDetailsQuery(id), cancellation.Token));
+            Guid.NewGuid(), new GetGameDetailsQuery(id), cancellation.Token));
         Assert.Equal(id, provider.Id);
         Assert.Equal(cancellation.Token, provider.Cancellation);
     }
@@ -37,11 +37,17 @@ public class GetGameDetailsTests
     public async Task Caller_cancellation_is_preserved()
     {
         var provider = new StubClient();
-        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider);
+        var handler = new GetGameDetailsHandler(new GetGameDetailsValidator(), provider, new StubMembership());
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => handler.HandleAsync(
-            new GetGameDetailsQuery(119133), cancellation.Token));
+            Guid.NewGuid(), new GetGameDetailsQuery(119133), cancellation.Token));
+    }
+
+    private sealed class StubMembership : IGameLibraryMembership
+    {
+        public Task<GameLibraryMembership> GetAsync(Guid userId, long igdbId, CancellationToken cancellationToken) =>
+            Task.FromResult(new GameLibraryMembership(false, null, null));
     }
 
     private sealed class StubClient : IIgdbClient

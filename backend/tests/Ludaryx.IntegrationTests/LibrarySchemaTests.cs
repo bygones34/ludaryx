@@ -260,7 +260,8 @@ public sealed class LibraryDatabaseFixture : IAsyncLifetime
         await create.ExecuteNonQueryAsync();
         created = true;
         connection.Database = databaseName;
-        connection.Pooling = false;
+        // Reuse connections within this isolated fixture; DROP DATABASE WITH FORCE closes them on cleanup.
+        connection.Pooling = true;
         options = new DbContextOptionsBuilder<LudaryxDbContext>().UseNpgsql(connection.ConnectionString).Options;
         try
         {

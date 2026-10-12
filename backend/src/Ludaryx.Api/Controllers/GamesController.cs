@@ -34,9 +34,10 @@ public sealed class GamesController(SearchGamesHandler searchGames, GetGameDetai
     [HttpGet("igdb/{igdbId}")]
     public async Task<IActionResult> Details([FromRoute] long igdbId, CancellationToken cancellationToken)
     {
+        if (!Guid.TryParse(User.FindFirst("sub")?.Value, out var userId) || userId == Guid.Empty) return Unauthorized();
         try
         {
-            var result = await getGameDetails.HandleAsync(new GetGameDetailsQuery(igdbId), cancellationToken);
+            var result = await getGameDetails.HandleAsync(userId, new GetGameDetailsQuery(igdbId), cancellationToken);
             return result switch
             {
                 GetGameDetailsResult.Invalid invalid => InvalidRequest(invalid.Errors),
