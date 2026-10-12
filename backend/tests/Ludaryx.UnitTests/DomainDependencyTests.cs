@@ -10,7 +10,7 @@ public class DomainDependencyTests
         var references = Assembly.Load("Ludaryx.Domain").GetReferencedAssemblies();
 
         Assert.All(references, reference =>
-            Assert.True(reference.Name == "System.Runtime",
+            Assert.True(reference.Name == "System.Runtime" || reference.Name == "System.Collections",
                 $"Unexpected Domain dependency: {reference.Name}"));
     }
 }

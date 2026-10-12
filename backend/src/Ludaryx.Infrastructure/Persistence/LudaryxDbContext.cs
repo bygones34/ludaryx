@@ -1,4 +1,7 @@
 using Ludaryx.Infrastructure.Identity;
+using Ludaryx.Domain.Games;
+using Ludaryx.Domain.Library;
+using Ludaryx.Infrastructure.Persistence.Configurations;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,10 +11,22 @@ public class LudaryxDbContext(DbContextOptions<LudaryxDbContext> options)
     : IdentityUserContext<ApplicationUser, Guid>(options)
 {
     public DbSet<RefreshTokenRecord> RefreshTokens => Set<RefreshTokenRecord>();
+    public DbSet<Game> Games => Set<Game>();
+    public DbSet<Genre> Genres => Set<Genre>();
+    public DbSet<Platform> Platforms => Set<Platform>();
+    public DbSet<GameGenre> GameGenres => Set<GameGenre>();
+    public DbSet<GamePlatform> GamePlatforms => Set<GamePlatform>();
+    public DbSet<UserGame> UserGames => Set<UserGame>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.ApplyConfiguration(new GameConfiguration());
+        builder.ApplyConfiguration(new GenreConfiguration());
+        builder.ApplyConfiguration(new PlatformConfiguration());
+        builder.ApplyConfiguration(new GameGenreConfiguration());
+        builder.ApplyConfiguration(new GamePlatformConfiguration());
+        builder.ApplyConfiguration(new UserGameConfiguration());
 
         builder.Entity<ApplicationUser>(user =>
         {
