@@ -315,6 +315,8 @@ Search trims input, allows at most 100 characters, and performs a case-insensiti
 
 Supported sort values are addedAtDesc, addedAtAsc, nameAsc, nameDesc, ratingAsc, ratingDesc, completedAtAsc, and completedAtDesc. Nullable sort values always come last. Break ties using UserGame.Id ascending to keep pagination deterministic. Unsupported sort values return 400.
 
+The list response also includes availablePlatforms: unique objects with igdbId and name from the current user's entire library, before search/filter/pagination. Sort these options by name, then IGDB ID. This supports a named platform selector without another endpoint and must not expose another user's library-only platform options.
+
 Library detail returns shared game summary/details, genres/platforms, and all personal fields including StartedAt, CompletedAt, and UpdatedAt. Enforce ownership for detail, update, and delete. A missing record or a record belonging to another user returns the same 404 response for GET, PATCH, and DELETE.
 
 PATCH accepts partial updates, for example:
