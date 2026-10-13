@@ -123,6 +123,46 @@ it('aborts an obsolete query and does not show its late results', async () => {
   expect(screen.queryByRole('heading', { name: 'Elden Ring' })).not.toBeInTheDocument()
 })
 
+it.each(['request', 'response body'] as const)(
+  'handles an aborted %s when the search changes or the page unmounts', async phase => {
+    let oldSignal: AbortSignal | undefined
+    let rejectOnAbort: Promise<unknown> | undefined
+    const fetchMock = vi.fn().mockImplementation((url: string, init: RequestInit) => {
+      if (!url.includes('q=elden')) return Promise.resolve(json({ items: [] }))
+      const signal = init.signal as AbortSignal
+      oldSignal = signal
+      const pending = new Promise<never>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+      rejectOnAbort = pending
+      if (phase === 'request') return pending
+      const response = json({ items: [] })
+      vi.spyOn(response, 'json').mockImplementation(() => pending)
+      return Promise.resolve(response)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage('/games?q=elden')
+    await waitFor(() => expect(oldSignal).toBeDefined())
+    fireEvent.change(screen.getByLabelText('Search games'), { target: { value: 'Hades' } })
+    expect(oldSignal?.aborted).toBe(true)
+    await expect(rejectOnAbort).rejects.toHaveProperty('name', 'AbortError')
+    expect(await screen.findByText('No games found for “Hades”. Try another name.')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/auth/refresh'))).toBe(false)
+
+    // A second pending request exercises cancellation when leaving the page.
+    fireEvent.change(screen.getByLabelText('Search games'), { target: { value: 'elden' } })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    await act(async () => { cleanup() })
+    expect(oldSignal?.aborted).toBe(true)
+    await expect(rejectOnAbort).rejects.toHaveProperty('name', 'AbortError')
+    expect(clients.at(-1)?.getQueryState(['games', 'search', 'elden'])).toMatchObject({
+      status: 'pending', fetchStatus: 'idle', error: null,
+    })
+  },
+)
+
 it('supports missing metadata and broken cover images', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({
     ...game, summary: null, releaseDate: null, genres: [], platforms: [],

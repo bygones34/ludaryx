@@ -47,6 +47,7 @@ appsettings.*.Local.json
 *.pfx
 *.p12
 *.key
+/frontend/.certs/
 
 # Editor temporary files
 *.swp

@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -29,15 +30,16 @@ const originalDialogs = {
   showModal: Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal'),
   close: Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'close'),
 }
-function renderPage(path: string, options: { anonymous?: boolean; client?: QueryClient } = {}) {
+function renderPage(path: string, options: { anonymous?: boolean; client?: QueryClient; strictMode?: boolean } = {}) {
   const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
-  render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
+  const content = <QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
     <AuthContext.Provider value={{ status: options.anonymous ? 'anonymous' : 'authenticated',
       user: { id: 'owner', username: 'player', displayName: 'Player', email: 'player@example.com', createdAt: '2026-01-01T00:00:00Z' },
       login: vi.fn(), logout: vi.fn(), register: vi.fn(),
     }}><App /></AuthContext.Provider>
-  </MemoryRouter></QueryClientProvider>)
+  </MemoryRouter></QueryClientProvider>
+  render(options.strictMode ? <StrictMode>{content}</StrictMode> : content)
   return client
 }
 beforeEach(() => {
@@ -65,6 +67,34 @@ it.each(['/library', `/library/${itemId}`])('protects %s', async path => {
   expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
   expect(fetchMock).not.toHaveBeenCalled()
 })
+
+it.each(['request', 'response body'] as const)(
+  'handles library %s cancellation during StrictMode remount and page unmount', async phase => {
+    const signals: AbortSignal[] = []
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal
+      signals.push(signal)
+      const pending = new Promise<never>((_resolve, reject) => {
+        if (signal.aborted) reject(signal.reason)
+        else signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+      if (phase === 'request') return pending
+      const response = json(page())
+      vi.spyOn(response, 'json').mockImplementation(() => pending)
+      return Promise.resolve(response)
+    }))
+    const client = renderPage('/library', { strictMode: true })
+    await waitFor(() => expect(signals.length).toBeGreaterThanOrEqual(2))
+    expect(signals[0].aborted).toBe(true)
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await act(async () => { cleanup() })
+    expect(signals.every(signal => signal.aborted)).toBe(true)
+    expect(client.getQueriesData({ queryKey: libraryKey('owner') })).toHaveLength(1)
+    expect(client.getQueryCache().find({ queryKey: libraryKey('owner'), exact: false })?.state).toMatchObject({
+      status: 'pending', fetchStatus: 'idle', error: null,
+    })
+  },
+)
 
 it('adds a game with selected status and updates membership and library caches', async () => {
   let added = false

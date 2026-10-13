@@ -92,11 +92,25 @@ send credentials on auth requests. Login and refresh set a host-only,
 token is never returned in JSON. Local browser testing therefore needs both
 frontend and API on HTTPS localhost.
 
-For M1 browser development, trust the ASP.NET Core development certificate
-with `dotnet dev-certs https --trust`, run the API with its `https` launch
-profile, and run `npm run dev` from `frontend`. Vite serves
-`https://localhost:5173` using a locally generated, untrusted development
-certificate; accept its browser warning for local development. The frontend
+For browser development, the API and Vite use the trusted ASP.NET Core
+development certificate. From the repository root, export the certificate and
+private key into the Git-ignored frontend certificate directory:
+
+```powershell
+dotnet dev-certs https --trust
+New-Item -ItemType Directory -Force frontend/.certs | Out-Null
+dotnet dev-certs https --export-path frontend/.certs/localhost.pem --format Pem --no-password
+```
+
+The export creates `localhost.pem` and `localhost.key`. Keep both local; never
+commit or share the private key. Repeat the export after certificate renewal and
+restart Vite. These files are required for local development/preview, but not for
+the production build or frontend tests. See the
+[dotnet dev-certs documentation](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-dev-certs).
+
+Run the API with its `https` launch profile and run `npm run dev` from `frontend`.
+Vite serves `https://localhost:5173` with this certificate so browser HTTPS and
+the secure HMR WebSocket can both validate it. The frontend
 uses `https://localhost:7034/api/v1` in development unless the public
 `VITE_API_BASE_URL` is set. Never put credentials in a Vite environment
 variable. With both origins using HTTPS localhost, the browser can send the

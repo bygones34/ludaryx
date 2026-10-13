@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Local cancellation probe</title><link rel="icon" href="data:,"></head>
+<body>
+<h1>Local cancellation probe</h1>
+<p>This temporary probe makes read-only requests with no account credentials.</p>
+<button id="run">Run cancellation checks</button>
+<pre id="result">Ready.</pre>
+<script type="module">
+const result = document.querySelector('#result');
+const button = document.querySelector('#run');
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+let unhandled = 0;
+window.addEventListener('unhandledrejection', () => { unhandled += 1; });
+button.addEventListener('click', async () => {
+  button.disabled = true;
+  const rows = [navigator.userAgent];
+  const targets = [
+    ['same-origin JSON', '/package.json', {}],
+    ['cross-origin API', 'https://localhost:7034/api/v1/users/me', { Authorization: 'Bearer diagnostic-noncredential' }],
+  ];
+  for (const [label, url, headers] of targets) {
+    for (const phase of ['request', 'body']) {
+      const before = unhandled;
+      let handled = 0;
+      let otherErrors = 0;
+      for (let i = 0; i < 5; i++) {
+        const controller = new AbortController();
+        try {
+          const request = fetch(url, { headers, signal: controller.signal });
+          if (phase === 'request') {
+            controller.abort();
+            await request;
+          } else {
+            const response = await request;
+            controller.abort();
+            await response.json();
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') handled += 1;
+          else otherErrors += 1;
+        }
+        await pause(20);
+      }
+      await pause(100);
+      rows.push(`${label} / ${phase}: caught aborts=${handled}, other errors=${otherErrors}, unhandled=${unhandled - before}`);
+      result.textContent = rows.join('\n');
+    }
+  }
+  rows.push('Complete.');
+  result.textContent = rows.join('\n');
+  console.warn('[native cancellation probe]', rows.join('\n'));
+  button.disabled = false;
+});
+</script>
+</body>
+</html>
