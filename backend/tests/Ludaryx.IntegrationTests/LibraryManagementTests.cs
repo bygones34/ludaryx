@@ -377,7 +377,133 @@ public class LibraryManagementTests(LibraryDatabaseFixture database) : IClassFix
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     }
 
-    private async Task<Harness> Create()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(null)]
+    public async Task Rating_only_patch_round_trips_bounds_and_null_without_changing_other_fields(int? rating)
+    {
+        await using var h = await Create();
+        using var before = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        using var response = await Patch(h, new { rating });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var saved = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var fetched = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        Assert.Equal(saved.RootElement.GetRawText(), fetched.RootElement.GetRawText());
+        if (rating is null) Assert.Equal(JsonValueKind.Null, fetched.RootElement.GetProperty("rating").ValueKind);
+        else Assert.Equal(rating.Value, fetched.RootElement.GetProperty("rating").GetInt32());
+        AssertUnchangedExcept(before.RootElement, fetched.RootElement, "rating", "updatedAt");
+    }
+
+    [Theory]
+    [InlineData("startedAt")]
+    [InlineData("completedAt")]
+    public async Task Client_cannot_edit_lifecycle_dates_even_with_an_otherwise_valid_patch(string field)
+    {
+        await using var h = await Create();
+        using var before = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        using var response = await Patch(h, new Dictionary<string, object?>
+        {
+            ["rating"] = 10, [field] = "2026-01-02T00:00:00Z"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var after = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        AssertUnchangedExcept(before.RootElement, after.RootElement);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Note_only_patch_preserves_text_and_other_personal_fields(bool maximumUnicodeLength)
+    {
+        await using var h = await Create();
+        var note = maximumUnicodeLength ? new string('x', 998) + "🎮" : "  First line\r\nSecond line: café 🎮\n  ";
+        using var before = await GetJson(h.Client, $"/api/v1/library/{h.C}");
+        using var response = await h.Client.PatchAsJsonAsync($"/api/v1/library/{h.C}", new { personalNote = note });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var saved = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var fetched = await GetJson(h.Client, $"/api/v1/library/{h.C}");
+        Assert.Equal(note, fetched.RootElement.GetProperty("personalNote").GetString());
+        Assert.Equal(saved.RootElement.GetRawText(), fetched.RootElement.GetRawText());
+        AssertUnchangedExcept(before.RootElement, fetched.RootElement, "personalNote", "updatedAt");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Invalid_combined_edit_does_not_save_status_dates_rating_or_note(bool oversizedNote)
+    {
+        await using var h = await Create();
+        using var before = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        using var response = await Patch(h, new
+        {
+            status = "Completed", rating = oversizedNote ? 10 : 0,
+            personalNote = oversizedNote ? new string('x', 999) + "🎮" : "Changed"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var after = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        AssertUnchangedExcept(before.RootElement, after.RootElement);
+    }
+
+    [Fact]
+    public async Task Http_transitions_record_first_dates_and_preserve_them_across_replays()
+    {
+        var clock = new LifecycleClock();
+        await using var h = await Create(clock);
+        var started = clock.Now;
+        using var playing = await Patch(h, new { status = "Playing" });
+        Assert.Equal(HttpStatusCode.OK, playing.StatusCode);
+        clock.Now = clock.Now.AddDays(1);
+        var completed = clock.Now;
+        using var finished = await Patch(h, new { status = "Completed" });
+        Assert.Equal(HttpStatusCode.OK, finished.StatusCode);
+        foreach (var status in new[] { "Dropped", "Playing", "OnHold", "Completed" })
+        {
+            clock.Now = clock.Now.AddDays(1);
+            using var response = await Patch(h, new { status });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var fetched = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+            Assert.Equal(started, fetched.RootElement.GetProperty("startedAt").GetDateTimeOffset());
+            Assert.Equal(completed, fetched.RootElement.GetProperty("completedAt").GetDateTimeOffset());
+            Assert.Equal(clock.Now, fetched.RootElement.GetProperty("updatedAt").GetDateTimeOffset());
+            Assert.Equal(9, fetched.RootElement.GetProperty("rating").GetInt32());
+            Assert.Equal("keep", fetched.RootElement.GetProperty("personalNote").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task Direct_completion_does_not_invent_a_start_date_and_later_playing_preserves_completion()
+    {
+        var clock = new LifecycleClock();
+        await using var h = await Create(clock);
+        var completed = clock.Now;
+        using var response = await Patch(h, new { status = "Completed" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var first = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        Assert.Equal(JsonValueKind.Null, first.RootElement.GetProperty("startedAt").ValueKind);
+        Assert.Equal(completed, first.RootElement.GetProperty("completedAt").GetDateTimeOffset());
+        clock.Now = clock.Now.AddDays(1);
+        using var playing = await Patch(h, new { status = "Playing" });
+        Assert.Equal(HttpStatusCode.OK, playing.StatusCode);
+        using var after = await GetJson(h.Client, $"/api/v1/library/{h.A}");
+        Assert.Equal(clock.Now, after.RootElement.GetProperty("startedAt").GetDateTimeOffset());
+        Assert.Equal(completed, after.RootElement.GetProperty("completedAt").GetDateTimeOffset());
+    }
+
+    private static void AssertUnchangedExcept(JsonElement before, JsonElement after, params string[] changedFields)
+    {
+        foreach (var property in before.EnumerateObject())
+            if (!changedFields.Contains(property.Name))
+                Assert.Equal(property.Value.GetRawText(), after.GetProperty(property.Name).GetRawText());
+    }
+
+    private sealed class LifecycleClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 2, 1, 12, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private async Task<Harness> Create(TimeProvider? timeProvider = null)
     {
         await using var context = database.CreateContext();
         var users = new[] { NewUser(), NewUser() };
@@ -415,6 +541,11 @@ public class LibraryManagementTests(LibraryDatabaseFixture database) : IClassFix
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?> { ["ConnectionStrings:LudaryxDatabase"] = connection }));
             builder.ConfigureServices(services =>
             {
+                if (timeProvider is not null)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(timeProvider);
+                }
                 services.RemoveAll<IIgdbClient>();
                 services.AddSingleton<IIgdbClient>(provider);
                 services.RemoveAll<LudaryxDbContext>();

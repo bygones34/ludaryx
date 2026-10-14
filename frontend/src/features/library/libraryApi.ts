@@ -66,3 +66,15 @@ export function updateLibraryItem(id: string, status: GameStatus, priority: Prio
 export function deleteLibraryItem(id: string) {
   return apiRequest<void>(`/library/${id}`, { method: 'DELETE' })
 }
+
+export function updateLibraryRating(id: string, rating: number | null) {
+  return apiRequest<LibraryItem>(`/library/${id}`, {
+    method: 'PATCH', body: JSON.stringify({ rating }),
+  })
+}
+
+export function updateLibraryNote(id: string, personalNote: string | null) {
+  return apiRequest<LibraryItem>(`/library/${id}`, {
+    method: 'PATCH', body: JSON.stringify({ personalNote }),
+  })
+}

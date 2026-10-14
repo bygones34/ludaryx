@@ -9,6 +9,8 @@ import { ApiError } from '@/lib/apiClient'
 import { deleteLibraryItem, getLibraryItem, statusLabel, updateLibraryItem } from './libraryApi'
 import type { GameStatus, LibraryItem, Priority } from './libraryApi'
 import { LibraryStatusFields } from './LibraryStatusFields'
+import { RatingEditor } from './RatingEditor'
+import { NoteEditor } from './NoteEditor'
 import { gameDetailsKey, libraryItemKey, refreshLibrary } from './libraryQueries'
 
 export function LibraryItemPage() {
@@ -30,13 +32,14 @@ export function LibraryItemPage() {
       <p>{details.error instanceof ApiError && details.error.status === 404 ? 'This item could not be found in your library.' : 'Could not load this library item. Please try again.'}</p>
       <Button variant="outline" onClick={() => { void details.refetch() }}>Try again</Button>
     </div>}
-    {valid && details.isSuccess && <div className="grid items-start gap-8 md:grid-cols-[240px_1fr]">
+    {valid && details.data && <div className="grid items-start gap-8 md:grid-cols-[240px_1fr]">
       <GameCover url={details.data.game.coverUrl} name={details.data.game.name} />
       <div className="space-y-6">
         <h1 className="text-3xl font-semibold tracking-tight">{details.data.game.name}</h1>
         {savedId === id && <p role="status">Changes saved.</p>}
         <StatusEditor key={`${details.data.id}:${details.data.updatedAt}`} item={details.data}
           onSaved={() => setSavedId(id)} onEdit={() => setSavedId(null)} />
+        <RatingEditor key={`rating:${userId}:${details.data.id}`} item={details.data} />
         <dl className="grid gap-4 sm:grid-cols-2">
           <Field label="Release date" value={details.data.game.releaseDate ?? 'Unavailable'} />
           <Field label="Genres" value={details.data.game.genres.map(value => value.name).join(' · ') || 'Unavailable'} />
@@ -46,8 +49,9 @@ export function LibraryItemPage() {
           <Field label="Started" value={dateLabel(details.data.startedAt)} />
           <Field label="Completed" value={dateLabel(details.data.completedAt)} />
         </dl>
+        <p className="text-sm text-muted-foreground">Started and Completed record the first entry into those statuses. Later status changes preserve these dates; dates cannot be edited.</p>
         <section className="space-y-2"><h2 className="text-xl font-semibold">About this game</h2><p className="whitespace-pre-line text-muted-foreground">{details.data.game.summary ?? 'No summary available.'}</p></section>
-        <section className="space-y-2"><h2 className="text-xl font-semibold">Personal note</h2><p className="whitespace-pre-line text-muted-foreground">{details.data.personalNote ?? 'No personal note yet.'}</p></section>
+        <NoteEditor key={`note:${userId}:${details.data.id}`} item={details.data} />
         <RemoveItem item={details.data} backUrl={backUrl} />
       </div>
     </div>}
