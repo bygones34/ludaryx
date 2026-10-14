@@ -185,6 +185,10 @@ namespace Ludaryx.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("GameId");
 
+                    b.HasIndex("UserId", "BacklogOrder")
+                        .IsUnique()
+                        .HasDatabaseName("UQ_UserGames_UserId_BacklogOrder");
+
                     b.HasIndex("UserId", "GameId")
                         .IsUnique();
 

@@ -1,4 +1,6 @@
 using Ludaryx.Application.Auth;
+using Ludaryx.Application.Backlog;
+using Ludaryx.Infrastructure.Backlog;
 using Ludaryx.Application.Auth.RegisterUser;
 using Ludaryx.Infrastructure.Authentication;
 using Ludaryx.Infrastructure.Identity;
@@ -48,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<ILibraryQueryStore>(provider => provider.GetRequiredService<EfLibraryQueryStore>());
         services.AddScoped<IGameLibraryMembership>(provider => provider.GetRequiredService<EfLibraryQueryStore>());
         services.AddScoped<ILibraryMutationStore, EfLibraryMutationStore>();
+        services.AddScoped<IBacklogStore, EfBacklogStore>();
 
         return services;
     }

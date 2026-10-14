@@ -19,6 +19,8 @@ public sealed class UserGameConfiguration : IEntityTypeConfiguration<UserGame>
         });
         builder.HasKey(item => item.Id);
         builder.HasIndex(item => new { item.UserId, item.GameId }).IsUnique();
+        builder.HasIndex(item => new { item.UserId, item.BacklogOrder }).IsUnique()
+            .HasDatabaseName("UQ_UserGames_UserId_BacklogOrder");
         builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(item => item.Game).WithMany().HasForeignKey(item => item.GameId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(item => item.Status).HasConversion<string>().HasColumnType("text").IsRequired();

@@ -161,14 +161,60 @@ are not logged. Controlled-handler tests cover the client without real
 credentials or live provider requests. Live search/details acceptance remains
 a separate M2 check after the endpoints and frontend are implemented.
 
+## M4 backlog persistence
+
+Apply the current migrations before running the updated API. From the repository
+root:
+
+```powershell
+Push-Location backend
+dotnet tool restore
+dotnet ef database update --project src/Ludaryx.Infrastructure --startup-project src/Ludaryx.Api -- --environment Development
+Pop-Location
+```
+
+`EnforceBacklogOrderUniqueness` adds a deferrable, initially immediate UNIQUE
+constraint on `(UserId, BacklogOrder)`. Non-Backlog null orders remain allowed.
+Reorder defers this constraint inside its transaction and uses the same user-row
+lock as library additions, updates, and deletion. Swaps are checked at commit.
+
+The EF model describes the constraint's backing unique index. The migration uses
+explicit PostgreSQL SQL for deferrability; its Down method drops the owning
+constraint, not the backing index. Future migrations changing this constraint
+must preserve that distinction. Reorder uses direct updates after domain
+validation to avoid EF's unique-index dependency ordering during swaps.
+
+`GET /api/v1/backlog` returns stored, owned Backlog records in persistent order.
+`PUT /api/v1/backlog/order` accepts the complete list with positions `1..N`.
+Neither endpoint calls IGDB. See the specification for validation and concurrency
+responses. The protected `/backlog` page uses these endpoints for persistent
+ordering. Drag a handle with a pointer, or use Space/Enter, arrow keys, and Escape
+for keyboard dragging. Move up/Move down buttons provide another keyboard option.
+Priority changes use the existing library PATCH endpoint; they do not change status.
+Writes save automatically and temporarily disable further changes. Failed writes
+restore the displayed saved data; a conflicting backlog reloads before more writes.
+
+For local end-to-end verification, sign in and add games with Backlog status.
+Check reorder and priority persistence after refreshing, then change a game's
+status from its library details and check that it leaves the backlog. Full M4
+acceptance, including the specification's ten-game scenario, remains a separate
+verification step.
+
 ## Backend integration tests
 
 The complete backend test suite requires healthy local PostgreSQL, the API
-user-secret configured as above, and the M1 migrations applied:
+user-secret configured as above, and the current migrations applied:
 
 ```powershell
 dotnet test backend/Ludaryx.sln
 ```
+
+Library/backlog fixtures create uniquely named temporary PostgreSQL databases,
+apply all migrations, and remove their own databases after testing. They require
+the configured local database role to have database creation permission. Backlog
+tests verify order swaps, ownership, invalid-request atomicity, rollback after a
+mid-update failure, serialized concurrent reorders, and migration down/up without
+changing the development database's library data.
 
 The connectivity test creates the API host in Development, resolves the
 registered DbContext, and calls `Database.CanConnectAsync()`. It does not

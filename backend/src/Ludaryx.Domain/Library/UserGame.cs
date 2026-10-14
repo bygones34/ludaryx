@@ -48,6 +48,15 @@ public sealed class UserGame
     public DateTimeOffset? StartedAt { get; private set; }
     public DateTimeOffset? CompletedAt { get; private set; }
 
+    public void Reorder(int order, DateTimeOffset updatedAt)
+    {
+        if (Status != GameStatus.Backlog) throw new InvalidOperationException("Only Backlog items can be reordered.");
+        if (order <= 0) throw new ArgumentOutOfRangeException(nameof(order));
+        if (BacklogOrder == order) return;
+        BacklogOrder = order;
+        UpdatedAt = updatedAt.ToUniversalTime();
+    }
+
     public void Update(GameStatus status, BacklogPriority? priority, int? backlogOrder,
         int? rating, string? personalNote, DateTimeOffset updatedAt)
     {

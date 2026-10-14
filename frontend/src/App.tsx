@@ -6,6 +6,7 @@ import { AppShell } from '@/app/AppShell'
 import { GameSearchPage, GameDetailsPage } from '@/features/games/GamePages'
 import { LibraryPage } from '@/features/library/LibraryPage'
 import { LibraryItemPage } from '@/features/library/LibraryItemPage'
+import { BacklogPage } from '@/features/backlog/BacklogPage'
 
 function ProtectedRoutes() {
   const { status } = useAuth()
@@ -31,6 +32,7 @@ function App() {
         <Route path="/games/:igdbId" element={<GameDetailsPage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/library/:id" element={<LibraryItemPage />} />
+        <Route path="/backlog" element={<BacklogPage />} />
       </Route>
       <Route path="/login" element={<GuestPage><LoginPage /></GuestPage>} />
       <Route path="/register" element={<GuestPage><RegisterPage /></GuestPage>} />

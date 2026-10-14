@@ -17,13 +17,13 @@ export function LibraryItemPage() {
   const [savedId, setSavedId] = useState<string | null>(null)
   const location = useLocation()
   const from = (location.state as { from?: string } | null)?.from
-  const backUrl = from && (from === '/library' || from.startsWith('/library?')) ? from : '/library'
+  const backUrl = from && (from === '/backlog' || from === '/library' || from.startsWith('/library?')) ? from : '/library'
   const valid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
   const details = useQuery({
     queryKey: libraryItemKey(userId, id), queryFn: ({ signal }) => getLibraryItem(id, signal), enabled: valid, retry: false,
   })
   return <section className="space-y-8">
-    <Link to={backUrl} className="text-sm underline underline-offset-4">Back to library</Link>
+    <Link to={backUrl} className="text-sm underline underline-offset-4">{backUrl === '/backlog' ? 'Back to backlog' : 'Back to library'}</Link>
     {!valid && <p role="alert">Invalid library item. Choose a game from your library.</p>}
     {valid && details.isPending && <p role="status">Loading library item…</p>}
     {valid && details.isError && <div role="alert" className="space-y-3">

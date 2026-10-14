@@ -106,7 +106,7 @@ Do not implement speculative features or architectural expansion during MVP work
 | Production | Cloudflare Pages frontend; Render API; Neon PostgreSQL |
 | Logging | ILogger<T>, structured logging |
 
-No generic repository or duplicate unit-of-work wrapper over EF Core. dnd-kit is a candidate for drag and drop, not a confirmed dependency. Testcontainers, Mapster, Zustand, and MediatR are possible later evaluations, not authorization to introduce them.
+No generic repository or duplicate unit-of-work wrapper over EF Core. M4.3 approves the React 19-compatible `@dnd-kit/react` package for backlog drag and drop, with keyboard interaction and explicit Move up/Move down controls. Its sortable API and default pointer/keyboard sensors are sufficient; no additional direct dnd-kit packages are required. Exact versions belong in the project files and lockfile. Testcontainers, Mapster, Zustand, and MediatR are possible later evaluations, not authorization to introduce them.
 
 ## 6. Domain Model
 
@@ -171,7 +171,7 @@ Infrastructure persists refresh-token state for expiration, rotation, and revoca
 
 Validation is separate from business conflicts: invalid rating is `400`; an already-owned game is `409`. Client validation improves usability but never substitutes for server validation and database constraints.
 
-An omitted backlog priority defaults to null. Backlog order starts at 1 and new or returning backlog items append at the current maximum plus one. Leaving Backlog clears priority and order. A non-null priority for a non-Backlog status is invalid input and returns 400. Reordering remains M4 work.
+An omitted backlog priority defaults to null. Backlog order starts at 1 and new or returning backlog items append at the current maximum plus one. Leaving Backlog clears priority and order. A non-null priority for a non-Backlog status is invalid input and returns 400. Deleting an item or leaving Backlog does not renumber the remaining items; gaps are allowed until the next successful reorder, which assigns contiguous positions from 1 through N. Reordering does not change status, priority, rating, note, AddedAt, StartedAt, or CompletedAt. Only records whose order changes receive a new UpdatedAt; submitting an unchanged order preserves timestamps.
 
 ## 8. Database Design
 
@@ -205,6 +205,8 @@ M3 uses UUID local identifiers and positive bigint IGDB identifiers. Game name a
 Store status and priority as enum names in text columns, with CHECK constraints for allowed values. Store UTC lifecycle timestamps as PostgreSQL timestamptz and release dates as date. Deleting an account cascades to its UserGame records while preserving shared metadata; deleting a UserGame never deletes its Game. Enforce the rating, note-length, and backlog-field rules in the database as well as application validation.
 
 Create shared metadata and UserGame within one database transaction. Resolve concurrent metadata uniqueness conflicts by re-reading the existing shared records. Serialize a user's library mutations by locking that user's row, so concurrent additions, backlog append calculations, and updates remain consistent. Database uniqueness constraints remain authoritative; a duplicate user/game addition returns 409.
+
+M4 adds a named UNIQUE constraint on `(UserId, BacklogOrder)`, using PostgreSQL's default distinct-null behavior so non-Backlog records may share null orders. Define it as DEFERRABLE INITIALLY IMMEDIATE. Within a reorder transaction, defer only this constraint until commit, allowing order swaps while enforcing a unique final position per user. Include the constraint in a named EF Core migration and verify swaps, rollback, and constraint enforcement against real PostgreSQL.
 
 Every schema change requires a named EF Core migration committed to source control. Verify migration application against a clean database. Production migrations are a deliberate deployment step. Add indexes based on actual queries; no speculative indexes are required by these decisions.
 
@@ -345,7 +347,13 @@ Reorder request:
 }
 ```
 
-Validate ownership, Backlog status, and duplicate IDs/order values. Apply atomically in a transaction. PUT success uses `200`; the exact response body and full-list-versus-partial reorder semantics must be settled in M4.
+PUT replaces the current user's complete backlog order; partial reorder is not supported. The required items array must contain every current Backlog UserGame exactly once. Each userGameId must be a non-empty UUID and each order a positive integer; for N supplied items, order values must be exactly 1 through N without duplicates. Explicit order values are authoritative, not the array's sequence. An empty array succeeds only when the current backlog is empty.
+
+Return 400 for malformed input, duplicate IDs/orders, non-contiguous positions, or a supplied owned item that is not in Backlog. A missing or foreign UserGame ID returns the same 404 without revealing ownership. After validating supplied items, return 409 if the list omits any current backlog item, including an item added in another session; the client must reload before retrying. Missing/deleted and non-Backlog supplied items retain their respective 404 and 400 responses.
+
+Lock the current user's row before reading and validating the current backlog, using the same lock as addition, update, and deletion. Validate the complete request before changing records and apply all changes atomically in one transaction. Concurrent valid reorders of the same item set are serialized; the last successful reorder wins. No version token or ETag is required in M4. Invalid requests and failures must leave the previous persisted order unchanged.
+
+PUT success returns 200 with the same `{ "items": [...] }` shape and item fields as GET, ordered by the newly persisted BacklogOrder. Return the saved values from the transaction rather than a later read that could observe another reorder. An unchanged order is an idempotent success; an empty backlog returns `{ "items": [] }`.
 
 ### 10.6 Dashboard
 
@@ -687,7 +695,7 @@ The available source does not resolve the following details. Resolve and record 
 | M0 | Exact package versions, local ports, configuration names, health-check depth, license |
 | M2 | Missing metadata representation, not-added library shape, upstream error mapping, provider token/cache/retry/timeout policies |
 | M3 | Foundation decisions resolved in Sections 7–10: schema/nullability/enum storage, list behavior, PATCH semantics, ownership responses, snapshots, and concurrency |
-| M4 | Order bounds/compaction, full versus partial reorder, response body, and concurrent reorder policy; nullable priority and initial order resolved in M3.1 |
+| M4 | Foundation decisions resolved in Sections 7, 8, and 10.5: full-list reorder, contiguous submitted positions, gap handling, responses, timestamps, serialized concurrency, and deferred uniqueness. M4.3 approves @dnd-kit/react as described in Section 5. |
 | M5 | Timestamp preservation and non-editable dates resolved in Section 7; rating and note editing UI remains M5 scope |
 | M6 | Empty average, precision/rounding, Currently Playing order and list limits, Up Next limit |
 | M9 | Domains, cookie topology, provider configuration, migration/recovery/backup procedures |

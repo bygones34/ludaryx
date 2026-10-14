@@ -1,4 +1,5 @@
 using FluentValidation;
+using Ludaryx.Application.Backlog;
 using Ludaryx.Application.Auth.GetCurrentUser;
 using Ludaryx.Application.Auth.LoginUser;
 using Ludaryx.Application.Auth.LogoutUser;
@@ -38,6 +39,9 @@ public static class DependencyInjection
         services.AddScoped<IValidator<UpdateLibraryCommand>, UpdateLibraryValidator>();
         services.AddScoped<UpdateLibraryHandler>();
         services.AddScoped<DeleteLibraryItemHandler>();
+        services.AddScoped<GetBacklogHandler>();
+        services.AddScoped<IValidator<ReorderBacklogCommand>, ReorderBacklogValidator>();
+        services.AddScoped<ReorderBacklogHandler>();
 
         return services;
     }
