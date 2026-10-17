@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { AuthContext } from '@/features/auth/authContext'
 import { backlogKey } from '@/features/backlog/backlogApi'
+import { dashboardKey } from '@/features/dashboard/dashboardApi'
 import type { LibraryItem } from './libraryApi'
 import { libraryItemKey, libraryKey } from './libraryQueries'
 
@@ -24,6 +25,7 @@ function setup(fetchMock: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('fetch', fetchMock)
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
+  client.setQueryData(dashboardKey('owner'), { cached: true })
   const view = render(<StrictMode><QueryClientProvider client={client}><MemoryRouter initialEntries={[`/library/${id}`]}>
     <AuthContext.Provider value={{ status: 'authenticated',
       user: { id: 'owner', username: 'player', displayName: 'Player', email: 'player@example.com', createdAt: item.addedAt },
@@ -57,6 +59,7 @@ it.each([1, 10, null])('saves only rating %s, uses the server response and inval
   expect(saved).toMatchObject({ status: 'Backlog', priority: 'High', personalNote: item.personalNote, startedAt: null, completedAt: null })
   await waitFor(() => expect(client.getQueryState([...libraryKey('owner'), 'list'])?.isInvalidated).toBe(true))
   expect(client.getQueryState(backlogKey('owner'))?.isInvalidated).toBe(true)
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
   expect(screen.getByLabelText('Your rating')).toHaveValue(rating === null ? '' : String(rating))
 })
 
@@ -153,6 +156,7 @@ it.each(['  First line\nSecond line: café 🎮\n  ', 'x'.repeat(998) + '🎮'])
   expect(screen.getByLabelText('Your personal note')).toHaveValue(note)
   expect(saved.rating).toBe(9)
   await waitFor(() => expect(client.getQueryState([...libraryKey('owner'), 'list'])?.isInvalidated).toBe(true))
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
 })
 
 it.each(['Clear note', 'Save note'])('clears a note with null through %s', async action => {

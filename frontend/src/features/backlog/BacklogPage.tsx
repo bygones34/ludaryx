@@ -7,6 +7,7 @@ import { Link } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { GameCover } from '@/features/games/GameCover'
+import { dashboardKey } from '@/features/dashboard/dashboardApi'
 import { priorities } from '@/features/library/libraryApi'
 import type { Priority } from '@/features/library/libraryApi'
 import { libraryItemKey, libraryKey, refreshLibrary } from '@/features/library/libraryQueries'
@@ -99,6 +100,7 @@ function BacklogBoard({ userId, data, refreshing, fetchFailed, reload }: {
       // refreshes a new view if the user navigated away while a write was pending.
       if (change.kind === 'priority') await refreshLibrary(client, userId, change.item.game.igdbId)
       else {
+        await client.invalidateQueries({ queryKey: dashboardKey(userId) })
         await client.invalidateQueries({ queryKey: libraryKey(userId) })
         if (!active.current) await client.invalidateQueries({ queryKey: backlogKey(userId) })
       }

@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router'
-import { FoundationPage } from '@/app/FoundationPage'
+import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { LoginPage, RegisterPage } from '@/features/auth/AuthPages'
 import { useAuth } from '@/features/auth/useAuth'
 import { AppShell } from '@/app/AppShell'
@@ -18,8 +18,10 @@ function ProtectedRoutes() {
 
 function GuestPage({ children }: { children: React.ReactNode }) {
   const { status } = useAuth()
+  const location = useLocation()
+  const from = (location.state as { from?: string } | null)?.from ?? '/'
   if (status === 'initializing') return <p role="status" className="p-8">Restoring your session…</p>
-  if (status === 'authenticated') return <Navigate to="/" replace />
+  if (status === 'authenticated') return <Navigate to={from} replace />
   return children
 }
 
@@ -27,7 +29,7 @@ function App() {
   return (
     <Routes>
       <Route element={<ProtectedRoutes />}>
-        <Route path="/" element={<FoundationPage />} />
+        <Route path="/" element={<DashboardPage />} />
         <Route path="/games" element={<GameSearchPage />} />
         <Route path="/games/:igdbId" element={<GameDetailsPage />} />
         <Route path="/library" element={<LibraryPage />} />

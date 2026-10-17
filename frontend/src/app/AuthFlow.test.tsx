@@ -10,6 +10,10 @@ const user = {
   id: 'user-id', username: 'player', email: 'player@example.com',
   displayName: 'player', createdAt: '2026-10-03T00:00:00Z',
 }
+const emptyDashboard = {
+  statistics: { totalGames: 0, playing: 0, completed: 0, backlog: 0, onHold: 0, dropped: 0, averageRating: null },
+  currentlyPlaying: [], upNext: [],
+}
 
 function json(body: object, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -19,11 +23,13 @@ function json(body: object, status = 200) {
 }
 
 function renderApp(path = '/') {
-  render(<QueryClientProvider client={new QueryClient()}>
+  const client = new QueryClient()
+  render(<QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider><App /></AuthProvider>
     </MemoryRouter>
   </QueryClientProvider>)
+  return client
 }
 
 beforeEach(() => clearAccessToken())
@@ -44,11 +50,12 @@ describe('authentication navigation', () => {
       if (url.endsWith('/auth/register')) return Promise.resolve(json({ id: 'user-id', username: 'player', email: user.email }, 201))
       if (url.endsWith('/auth/login')) return Promise.resolve(json({ accessToken: 'access-token', expiresIn: 900, user }))
       if (url.endsWith('/users/me')) return Promise.resolve(json(user))
+      if (url.endsWith('/dashboard')) return Promise.resolve(json(emptyDashboard))
       if (url.endsWith('/auth/logout')) return Promise.resolve(new Response(null, { status: 204 }))
       throw new Error(`Unexpected URL: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
-    renderApp('/register')
+    const client = renderApp('/register')
 
     fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'player' } })
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: user.email } })
@@ -59,10 +66,12 @@ describe('authentication navigation', () => {
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: user.email } })
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a long passphrase with spaces' } })
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-    expect(await screen.findByRole('heading', { name: 'Welcome, player.' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(await screen.findByText('Your library starts here')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }))
     expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+    expect(client.getQueryCache().getAll()).toHaveLength(0)
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/auth/logout'),
       expect.objectContaining({ credentials: 'include' }))
   })
@@ -77,12 +86,17 @@ describe('authentication navigation', () => {
         expect(new Headers(init.headers).get('Authorization')).toBe('Bearer restored-token')
         return Promise.resolve(json(user))
       }
+      if (url.endsWith('/dashboard')) {
+        expect(new Headers(init.headers).get('Authorization')).toBe('Bearer restored-token')
+        return Promise.resolve(json(emptyDashboard))
+      }
       throw new Error(`Unexpected URL: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
     renderApp()
-    expect(await screen.findByRole('heading', { name: 'Welcome, player.' })).toBeInTheDocument()
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(await screen.findByRole('heading', { name: 'Dashboard' })).toBeInTheDocument()
+    expect(await screen.findByText('Your library starts here')).toBeInTheDocument()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
   })
 
   it('keeps the login form available after a rejected password', async () => {
@@ -97,5 +111,25 @@ describe('authentication navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid email or password.')
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+  })
+
+  it('returns to the requested protected location after sign-in instead of the default dashboard', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/auth/refresh')) return Promise.resolve(json({}, 401))
+      if (url.endsWith('/auth/login')) return Promise.resolve(json({ accessToken: 'access-token' }))
+      if (url.endsWith('/users/me')) return Promise.resolve(json(user))
+      if (url.includes('/library?')) return Promise.resolve(json({ items: [], page: 1, pageSize: 20,
+        totalCount: 0, totalPages: 0, availablePlatforms: [] }))
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderApp('/library?status=Completed')
+    fireEvent.change(await screen.findByLabelText('Email'), { target: { value: user.email } })
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'a long passphrase with spaces' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    expect(await screen.findByRole('heading', { name: 'My library' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Status filter')).toHaveValue('Completed')
+    expect(await screen.findByText('No games match your library filters.')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/dashboard'))).toBe(false)
   })
 })

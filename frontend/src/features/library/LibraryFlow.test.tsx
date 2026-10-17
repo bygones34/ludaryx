@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { AuthContext } from '@/features/auth/authContext'
 import { clearAccessToken } from '@/lib/apiClient'
+import { dashboardKey } from '@/features/dashboard/dashboardApi'
 import type { LibraryItem, LibraryPage } from './libraryApi'
 import { gameDetailsKey, libraryItemKey, libraryKey } from './libraryQueries'
 
@@ -33,6 +34,7 @@ const originalDialogs = {
 function renderPage(path: string, options: { anonymous?: boolean; client?: QueryClient; strictMode?: boolean } = {}) {
   const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
+  client.setQueryData(dashboardKey('owner'), { cached: true })
   const content = <QueryClientProvider client={client}><MemoryRouter initialEntries={[path]}>
     <AuthContext.Provider value={{ status: options.anonymous ? 'anonymous' : 'authenticated',
       user: { id: 'owner', username: 'player', displayName: 'Player', email: 'player@example.com', createdAt: '2026-01-01T00:00:00Z' },
@@ -115,6 +117,7 @@ it('adds a game with selected status and updates membership and library caches',
   const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!
   expect(JSON.parse(post[1].body)).toEqual({ igdbId: 119133, status: 'Playing', priority: null })
   await waitFor(() => expect(client.getQueryState([...libraryKey('owner'), 'list', 'cached'])?.isInvalidated).toBe(true))
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
   expect(screen.queryByRole('button', { name: 'Add to Library' })).not.toBeInTheDocument()
 })
 
@@ -254,6 +257,7 @@ it('saves only status and priority and refreshes item, list, and membership', as
   expect(screen.getByText('Keep this note.')).toBeInTheDocument()
   expect(client.getQueryData<{ library: { status: string } }>(gameDetailsKey('owner', 119133))?.library.status).toBe('Playing')
   expect(client.getQueryState([...libraryKey('owner'), 'list', 'cached'])?.isInvalidated).toBe(true)
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
 })
 
 it('keeps the editable form available after a failed update', async () => {
@@ -297,6 +301,7 @@ it('recovers from a removal failure and clears cached membership after confirmed
   expect(await screen.findByText('No games match your library filters.')).toBeInTheDocument()
   expect(client.getQueryData(libraryItemKey('owner', itemId))).toBeUndefined()
   expect(client.getQueryData<{ library: { isAdded: boolean } }>(gameDetailsKey('owner', 119133))?.library.isAdded).toBe(false)
+  await waitFor(() => expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true))
 })
 
 it('shows a missing owned item message on 404', async () => {

@@ -363,7 +363,19 @@ Single response contains:
 - `currentlyPlaying`: items with `userGameId`, `igdbId`, `name`, `coverUrl`, and `rating`.
 - `upNext`: items with `userGameId`, `igdbId`, `name`, `coverUrl`, `priority`, and `order`.
 
-Ignore null ratings in the average and respect backlog order for Up Next. Empty-average representation, precision, list limits, and Currently Playing sort require clarification in M6.
+M6.1 resolves the dashboard policies as follows:
+
+- `GET /api/v1/dashboard` is authenticated and scoped to the current user from claims. It reads persisted library records and shared metadata without calling IGDB, changing records, or creating a persisted dashboard entity.
+- Counts cover the user's entire library, independent of list limits. Each record contributes to exactly one status count; the five status counts sum to `totalGames`.
+- `averageRating` is a nullable JSON number computed from all non-null personal ratings across all statuses. Return null if no records are rated; the UI displays "Not rated". Otherwise round the arithmetic mean once to one decimal place using midpoint rounding away from zero (for example, 8.25 becomes 8.3). The UI displays one decimal place followed by `/10`; a numeric zero must not stand for an absent average.
+- `currentlyPlaying` contains at most five records with current status Playing. Sort by `StartedAt` descending (most recent first start first), then `AddedAt` descending, then UserGame ID ascending for deterministic ties. A missing StartedAt sorts last. StartedAt remains the historical first-start date; returning to Playing does not reset it, and editing rating/note does not promote an item in this list.
+- `upNext` contains at most five current Backlog records ordered by `BacklogOrder` ascending. Priority does not override the user's saved order; gaps in stored positions remain valid. Return the stored position as `order` and preserve nullable priority.
+- Lists contain the fields specified above, with nullable covers/ratings/priorities preserved. The limits are fixed at five for M6; no pagination, limit query options, or additional response fields are required. Statistics remain complete even when lists are truncated.
+- An empty library returns HTTP 200, zero for every count, null averageRating, and two empty arrays. A missing Playing or Backlog subset produces an empty array independently. Frontend loading, empty, and request-failure states are distinct; a failed request must not be presented as zero statistics.
+- The protected frontend `/` route becomes the dashboard, replacing the foundation page, with a Dashboard navigation label. Items link to existing `/library/{userGameId}` details; list sections link to the existing library/backlog views for the full collections. No new editing controls are introduced on the dashboard.
+- Fetch dashboard data in one API request with a user-scoped TanStack Query key. Successful library additions, updates (including rating/note/status/priority), removals, and backlog reorders invalidate that user's dashboard query. Re-entering the page must refresh invalidated data. Logout/account changes clear private cached data using the existing auth lifecycle, and late requests must not restore another session's private data.
+
+These are implementation decisions recorded in M6.1, not claims of dashboard implementation or acceptance. See `docs/m6-foundation-decisions.md` for rationale, verification cases, and step boundaries.
 
 ### 10.7 Errors and status codes
 
@@ -589,6 +601,8 @@ M0 verifies connectivity against real local PostgreSQL without creating an empty
 
 **Definition of Done:** Dashboard correctly summarizes real current-user data in one response; list and average policies are documented.
 
+**Implementation status:** M6.1–M6.5 are complete and accepted as recorded in `docs/m6-acceptance.md` and `docs/m6-foundation-decisions.md`. The optional empty-account live check was not explicitly confirmed; automated empty-library checks passed. M7 has not started.
+
 ### M7 — UI / UX & Responsive
 
 **Scope:** Desktop/tablet/mobile polish; system/light/dark themes; skeletons, empty/error states, toasts, confirmation dialogs, navigation, consistent spacing, accessibility basics, and keyboard navigation.
@@ -697,7 +711,7 @@ The available source does not resolve the following details. Resolve and record 
 | M3 | Foundation decisions resolved in Sections 7–10: schema/nullability/enum storage, list behavior, PATCH semantics, ownership responses, snapshots, and concurrency |
 | M4 | Foundation decisions resolved in Sections 7, 8, and 10.5: full-list reorder, contiguous submitted positions, gap handling, responses, timestamps, serialized concurrency, and deferred uniqueness. M4.3 approves @dnd-kit/react as described in Section 5. |
 | M5 | Timestamp preservation and non-editable dates resolved in Section 7; rating and note editing UI remains M5 scope |
-| M6 | Empty average, precision/rounding, Currently Playing order and list limits, Up Next limit |
+| M6 | Foundation decisions resolved in Section 10.6: nullable average, one-decimal rounding away from zero, five-item lists, deterministic first-start ordering, saved backlog order, empty states, frontend route, and user-scoped cache refresh. Implementation and acceptance remain M6 scope. |
 | M9 | Domains, cookie topology, provider configuration, migration/recovery/backup procedures |
 
 This list prevents missing details from being mistaken for historical agreement. Once resolved, update the relevant normative sections and keep this document synchronized with implementation.

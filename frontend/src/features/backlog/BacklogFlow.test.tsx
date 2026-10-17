@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { AuthContext } from '@/features/auth/authContext'
 import { clearAccessToken } from '@/lib/apiClient'
+import { dashboardKey } from '@/features/dashboard/dashboardApi'
 import { libraryItemKey, libraryKey } from '@/features/library/libraryQueries'
 import { backlogKey } from './backlogApi'
 import type { BacklogItem } from './backlogApi'
@@ -27,6 +28,7 @@ function tree(client: QueryClient, owner: string, path: string, anonymous = fals
 function renderPage(options: { client?: QueryClient; owner?: string; anonymous?: boolean } = {}) {
   const client = options.client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
+  client.setQueryData(dashboardKey(options.owner ?? 'owner'), { cached: true })
   return { client, ...render(tree(client, options.owner ?? 'owner', '/backlog', options.anonymous)) }
 }
 function names() { return within(screen.getByRole('list', { name: 'Backlog games' })).getAllByRole('link').map(link => link.textContent) }
@@ -89,6 +91,7 @@ it('sends the full contiguous order and uses the server reply to refresh list/de
   expect(names()).toEqual(['Gamma', 'Alpha', 'Beta'])
   expect(client.getQueryState(libraryItemKey('owner', ids[0]))?.isInvalidated).toBe(true)
   expect(client.getQueryState([...libraryKey('owner'), 'list', 'cached'])?.isInvalidated).toBe(true)
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
 })
 
 it('disables writes during a save and prevents duplicate submissions', async () => {
@@ -173,6 +176,7 @@ it.each(['Low', ''])('updates priority using only the existing PATCH priority fi
   await waitFor(() => expect(screen.getByLabelText('Priority for Alpha')).toHaveValue(value))
   expect(payload).toEqual({ priority: value || null })
   expect(client.getQueryData(libraryItemKey('owner', ids[0]))).toMatchObject({ rating: 9, personalNote: 'Keep this note.' })
+  expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true)
 })
 
 it('restores priority after a failed PATCH and supports retry', async () => {
@@ -201,6 +205,7 @@ it('does not expose another owners backlog cache or repopulate it after a late w
   await screen.findByText('Your backlog is empty.')
   await act(async () => { finish(json({ items: initial })) })
   expect(client.getQueryData(backlogKey('owner'))).toBeUndefined()
+  expect(client.getQueryData(dashboardKey('owner'))).toBeUndefined()
   expect(client.getQueriesData({ queryKey: libraryKey('owner') })).toEqual([])
   expect(screen.queryByRole('link', { name: 'Alpha' })).not.toBeInTheDocument()
 })
