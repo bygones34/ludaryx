@@ -1,6 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams } from 'react-router'
+import { useNotify } from '@/components/feedback/toastContext'
+import { LoadingState, ErrorState } from '@/components/feedback/QueryState'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { GameCover } from '@/features/games/GameCover'
@@ -27,16 +29,15 @@ export function LibraryItemPage() {
   return <section className="space-y-8">
     <Link to={backUrl} className="text-sm underline underline-offset-4">{backUrl === '/backlog' ? 'Back to backlog' : 'Back to library'}</Link>
     {!valid && <p role="alert">Invalid library item. Choose a game from your library.</p>}
-    {valid && details.isPending && <p role="status">Loading library item…</p>}
-    {valid && details.isError && <div role="alert" className="space-y-3">
-      <p>{details.error instanceof ApiError && details.error.status === 404 ? 'This item could not be found in your library.' : 'Could not load this library item. Please try again.'}</p>
-      <Button variant="outline" onClick={() => { void details.refetch() }}>Try again</Button>
-    </div>}
-    {valid && details.data && <div className="grid items-start gap-8 md:grid-cols-[240px_1fr]">
-      <GameCover url={details.data.game.coverUrl} name={details.data.game.name} />
-      <div className="space-y-6">
+    {valid && details.isPending && <LoadingState message="Loading library item…" layout="details" />}
+    {valid && details.isError && <ErrorState message={details.error instanceof ApiError && details.error.status === 404 ? 'This item could not be found in your library.' : 'Could not load this library item. Please try again.'}
+      retry={() => { void details.refetch() }} retrying={details.isFetching} />}
+    {valid && details.data && details.isFetching && <p role="status">Refreshing library item…</p>}
+    {valid && details.data && <div className="grid items-start gap-6 md:grid-cols-[200px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8">
+      <div className="w-40 max-w-full sm:w-48 md:w-full"><GameCover url={details.data.game.coverUrl} name={details.data.game.name} /></div>
+      <div className="min-w-0 space-y-6">
         <h1 className="text-3xl font-semibold tracking-tight">{details.data.game.name}</h1>
-        {savedId === id && <p role="status">Changes saved.</p>}
+        {savedId === id && <p>Changes saved.</p>}
         <StatusEditor key={`${details.data.id}:${details.data.updatedAt}`} item={details.data}
           onSaved={() => setSavedId(id)} onEdit={() => setSavedId(null)} />
         <RatingEditor key={`rating:${userId}:${details.data.id}`} item={details.data} />
@@ -61,6 +62,10 @@ export function LibraryItemPage() {
 function StatusEditor({ item, onSaved, onEdit }: { item: LibraryItem; onSaved: () => void; onEdit: () => void }) {
   const userId = useAuth().user?.id
   const client = useQueryClient()
+  const notify = useNotify()
+  const active = useRef(false)
+  const writing = useRef(false)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   const [status, setStatus] = useState<GameStatus>(item.status)
   const [priority, setPriority] = useState<Priority | null>(item.priority)
   const busy = useIsMutating({ mutationKey: ['library-write', userId, item.id] }) > 0
@@ -68,20 +73,25 @@ function StatusEditor({ item, onSaved, onEdit }: { item: LibraryItem; onSaved: (
     mutationKey: ['library-write', userId, item.id],
     mutationFn: () => updateLibraryItem(item.id, status, priority),
     onSuccess: async saved => {
-      onSaved()
-      client.setQueryData(libraryItemKey(userId, item.id), saved)
-      client.setQueryData<GameDetails>(gameDetailsKey(userId, item.game.igdbId), cached => cached
-        ? { ...cached, library: { isAdded: true, userGameId: item.id, status: saved.status } } : cached)
+      notify('Library status updated.')
+      if (active.current) {
+        onSaved()
+        client.setQueryData(libraryItemKey(userId, item.id), saved)
+        client.setQueryData<GameDetails>(gameDetailsKey(userId, item.game.igdbId), cached => cached
+          ? { ...cached, library: { isAdded: true, userGameId: item.id, status: saved.status } } : cached)
+      }
       await refreshLibrary(client, userId, item.game.igdbId)
     },
+    onSettled: () => { writing.current = false },
   })
   return <section className="space-y-4 rounded-xl border p-4">
     <h2 className="text-lg font-semibold">Library status</h2>
     <LibraryStatusFields prefix="edit" status={status} priority={priority} disabled={busy}
+      errorId={update.isError ? 'status-error' : undefined}
       onStatus={value => { setStatus(value); if (value !== 'Backlog') setPriority(null); update.reset(); onEdit() }}
       onPriority={value => { setPriority(value); update.reset(); onEdit() }} />
-    <Button disabled={busy} onClick={() => update.mutate()}>{update.isPending ? 'Saving…' : 'Save changes'}</Button>
-    {update.isError && <p role="alert" className="text-sm text-destructive">Could not save changes. Please try again.</p>}
+    <Button disabled={busy} onClick={() => { if (busy || writing.current) return; writing.current = true; update.mutate() }}>{update.isPending ? 'Saving…' : 'Save changes'}</Button>
+    {update.isError && <p id="status-error" role="alert" className="text-sm text-destructive">Could not save changes. Please try again.</p>}
     <p className="text-sm text-muted-foreground">Current status: {statusLabel(item.status)}</p>
   </section>
 }
@@ -89,31 +99,51 @@ function StatusEditor({ item, onSaved, onEdit }: { item: LibraryItem; onSaved: (
 function RemoveItem({ item, backUrl }: { item: LibraryItem; backUrl: string }) {
   const userId = useAuth().user?.id
   const client = useQueryClient()
+  const notify = useNotify()
+  const active = useRef(false)
+  const writing = useRef(false)
+  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
   const navigate = useNavigate()
   const dialog = useRef<HTMLDialogElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   const busy = useIsMutating({ mutationKey: ['library-write', userId, item.id] }) > 0
   const remove = useMutation({
     mutationKey: ['library-write', userId, item.id], mutationFn: () => deleteLibraryItem(item.id),
     onSuccess: async () => {
-      dialog.current?.close()
-      client.setQueryData<GameDetails>(gameDetailsKey(userId, item.game.igdbId), cached => cached
-        ? { ...cached, library: { isAdded: false, userGameId: null, status: null } } : cached)
-      navigate(backUrl, { replace: true, state: { notice: `${item.game.name} was removed from your library.` } })
-      client.removeQueries({ queryKey: libraryItemKey(userId, item.id), exact: true })
+      notify('Game removed from your library.')
+      if (active.current) {
+        dialog.current?.close()
+        client.setQueryData<GameDetails>(gameDetailsKey(userId, item.game.igdbId), cached => cached
+          ? { ...cached, library: { isAdded: false, userGameId: null, status: null } } : cached)
+        navigate(backUrl, { replace: true, state: { notice: `${item.game.name} was removed from your library.` } })
+        client.removeQueries({ queryKey: libraryItemKey(userId, item.id), exact: true })
+      }
       await refreshLibrary(client, userId, item.game.igdbId)
     },
+    onSettled: () => { writing.current = false },
   })
   return <section>
-    <Button variant="destructive" disabled={busy} onClick={() => { remove.reset(); dialog.current?.showModal() }}>Remove from library</Button>
-    <dialog ref={dialog} aria-labelledby="remove-title" aria-describedby="remove-description"
-      className="m-auto w-[calc(100%_-_2rem)] max-w-md space-y-4 rounded-xl border bg-card p-6 text-card-foreground shadow-xl backdrop:bg-black/50"
-      onCancel={event => { if (remove.isPending) event.preventDefault() }}>
+    <Button ref={trigger} variant="destructive" disabled={busy} onClick={() => { remove.reset(); dialog.current?.showModal() }}>Remove from library</Button>
+    <dialog ref={dialog} tabIndex={-1} aria-labelledby="remove-title" aria-describedby="remove-description"
+      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%_-_2rem)] max-w-md space-y-4 overflow-y-auto rounded-xl border bg-card p-4 text-card-foreground shadow-xl backdrop:bg-black/50 sm:p-6"
+      onClose={() => { if (active.current && trigger.current?.isConnected) trigger.current.focus() }}
+      onKeyDown={event => {
+        if (event.key !== 'Tab') return
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+        const first = controls[0], last = controls.at(-1)
+        if (!first || (event.shiftKey && document.activeElement === first) || (!event.shiftKey && document.activeElement === last)) {
+          event.preventDefault()
+          const target = event.shiftKey ? last : first
+          target?.focus()
+        }
+      }}
+      onCancel={event => { if (remove.isPending || writing.current) event.preventDefault() }}>
       <h2 id="remove-title" className="text-xl font-semibold">Remove {item.game.name}?</h2>
       <p id="remove-description" className="text-sm text-muted-foreground">This removes its status, rating, and personal note from your library. You can add the game again later.</p>
       {remove.isError && <p role="alert" className="text-sm text-destructive">Could not remove this game. Please try again.</p>}
-      <div className="flex gap-3">
-        <Button variant="outline" disabled={remove.isPending} onClick={() => dialog.current?.close()}>Cancel</Button>
-        <Button variant="destructive" disabled={remove.isPending} onClick={() => remove.mutate()}>{remove.isPending ? 'Removing…' : 'Confirm removal'}</Button>
+      <div className="flex flex-wrap gap-3">
+        <Button autoFocus variant="outline" disabled={remove.isPending} onClick={() => { if (!writing.current) dialog.current?.close() }}>Cancel</Button>
+        <Button variant="destructive" disabled={remove.isPending} onClick={() => { if (remove.isPending || writing.current) return; writing.current = true; remove.mutate() }}>{remove.isPending ? 'Removing…' : 'Confirm removal'}</Button>
       </div>
     </dialog>
   </section>

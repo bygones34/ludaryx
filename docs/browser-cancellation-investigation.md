@@ -2,6 +2,8 @@
 
 Date: 2026-10-13
 
+Last investigation update: 2026-10-18
+
 Status: The AbortError warning is reproducible in the owner's Edge environment
 without Ludaryx, React, or TanStack Query code. Its underlying browser cause is
 not yet established. No application-level cancellation workaround is applied.
@@ -87,3 +89,87 @@ identifies Send Feedback as the reporting channel. No external report was sent.
 
 API, frontend, and PostgreSQL remain running for local testing. No commit/push
 or M4 implementation was performed during this investigation.
+
+
+## M7.6 automated re-investigation — 2026-10-18
+
+The owner requested preparatory regression and investigation now, stopping before
+final owner live-browser acceptance. README and acceptance records are reserved
+for that later step. This section records technical investigation only.
+
+### Current environment and controlled application
+
+The available automation surfaces were the in-app Chromium browser and MCP Apps;
+no Edge browser connection or native app-control surface was available. Reading
+only the installed Edge executable metadata reported **155.0.4283.62**. That
+identifies the installed executable, not the exact build/profile from the prior
+owner reproduction. The automated browser still reported the reduced user agent
+Chrome/155.0.0.0 without Edg; it must not be presented as an Edge test.
+
+Ran the actual frontend entry point against the real HTTPS API/application/EF
+stack, backed by a newly generated, migrated PostgreSQL test database. Only IGDB
+was replaced with deterministic synthetic metadata and controlled delay/failure
+responses. Authentication, HTTP, CORS, secure refresh cookies, library/backlog
+writes, dashboard projections, reload and re-login persistence were real. The
+owner's library and external IGDB service were not used for this journey.
+
+For cancellation tracing, a temporary alternate HTML entry imported the unchanged
+frontend entry point. It counted window error/unhandledrejection events without
+preventDefault or suppression. A diagnostic fetch wrapper observed AbortSignal
+abort events and returned the original native fetch promise directly; it added
+no promise continuations and did not modify Promise/Response prototypes.
+Production frontend source and apiClient.ts were not changed.
+
+After 20 rapid Dashboard/Library transitions, confirmed-start slow discovery
+requests, leaving a pending search, and changing search text, the final counters
+were **52 requests, 43 observed abort signals, zero unhandled rejections, zero
+unhandled AbortErrors, and zero window errors**. Abort-signal counts include
+signals observed by the wrapper, not a claim that every one aborted an unfinished
+network operation. Slow-request start counters confirmed the pending-request
+checks had reached fetch before cancellation.
+
+### Native fetch comparison with development tooling removed
+
+Repeated the existing credential-free probe in two configurations, using the
+same HTTPS localhost origin and existing trusted development certificate:
+
+1. Served through Vite, without React or TanStack imports in the probe.
+2. Served by a minimal Node HTTPS static server, with Vite stopped. No external
+   scripts, HMR client, React, TanStack, or application code were loaded. The one
+   inline module was the native-fetch probe itself. The same-origin payload was
+   the same package.json; cross-origin requests reached the real isolated API
+   with the deliberately invalid diagnostic bearer and no account credentials.
+
+| Native fetch case | Caught aborts / other errors / unhandled, Vite | Caught aborts / other errors / unhandled, static HTTPS |
+|---|---|---|
+| Same-origin JSON request | 5 / 0 / 0 | 5 / 0 / 0 |
+| Same-origin JSON body | 5 / 0 / 0 | 5 / 0 / 0 |
+| Cross-origin API request | 5 / 0 / 0 | 5 / 0 / 0 |
+| Cross-origin API body | 5 / 0 / 0 | 5 / 0 / 0 |
+
+### Outcome, evidence, and cleanup
+
+The warning was **not reproduced in the available Chromium automation**, either
+in the real application or in native fetch with/without Vite. This does not
+establish the underlying cause of the historical Edge-only observation, prove a
+vendor fix, or eliminate an Edge/profile/development-tool interaction. The exact
+Edge comparison remains unverified and the original issue stays **unresolved**.
+No functional cancellation blocker was reproduced in this run. Keep normal
+cancellation and error handling; no error suppression, disabled StrictMode,
+certificate bypass, dependency upgrade, or speculative application workaround
+was introduced. No vendor report was sent.
+
+Saved machine-readable counters, probe output and screenshots in the task's
+visualization output directory (m7-6-application-cancellation.json,
+m7-6-native-probes.json, and m7-6-native-cancellation.png). The ignored technical
+run report is backend/TestResults/m7-6-verification.md. The permanent API journey
+regression is backend/tests/Ludaryx.IntegrationTests/ApplicationJourneyTests.cs.
+The final full suite passed 305 backend tests and 141 frontend tests, both builds,
+and frontend lint. These are preparatory checks, not final M7 acceptance.
+
+The controlled API shut down and its generated test database was removed.
+Temporary tracing/static-server and browser-host source was removed after use;
+frontend/API listeners were confirmed stopped and PostgreSQL was stopped with
+its persistent development volume preserved. Agent tabs were closed, the
+viewport reset, and System theme restored. README/acceptance documentation was
+not updated, and no commit, push, or owner live acceptance was performed.

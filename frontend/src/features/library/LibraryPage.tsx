@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useSearchParams } from 'react-router'
+import { LoadingState, EmptyState, ErrorState } from '@/components/feedback/QueryState'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { GameCover } from '@/features/games/GameCover'
@@ -70,8 +71,8 @@ export function LibraryPage() {
       <p className="text-muted-foreground">Your games, organized your way.</p>
       <Link to="/games" className="text-sm underline underline-offset-4">Discover more games</Link>
     </div>
-    {notice && <p role="status">{notice}</p>}
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {notice && <p>{notice}</p>}
+    <div role="group" aria-label="Library filters" aria-describedby={!valid ? 'library-filters-error' : undefined} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div className="space-y-1.5 sm:col-span-2">
         <label htmlFor="library-search" className="text-sm font-medium">Search your library</label>
         <input id="library-search" type="search" className={libraryInputClass} value={search} maxLength={100}
@@ -100,18 +101,20 @@ export function LibraryPage() {
       </FilterSelect>
     </div>
     <Button variant="outline" onClick={() => setParams({}, { replace: true })}>Reset filters</Button>
-    {!valid && <p role="alert">Invalid library filters. Reset filters to continue.</p>}
-    {valid && (!ready || results.isPending) && <p role="status">Loading your library…</p>}
-    {ready && results.isError && <div role="alert" className="space-y-3 rounded-xl border p-6">
-      <p>{results.error instanceof ApiError && results.error.status === 400 ? 'Please check your library filters.' : 'Could not load your library. Please try again.'}</p>
-      <Button variant="outline" onClick={() => { void results.refetch() }}>Try again</Button>
-    </div>}
-    {ready && results.isSuccess && <>
+    {!valid && <p id="library-filters-error" role="alert">Invalid library filters. Reset filters to continue.</p>}
+    {valid && (!ready || results.isPending) && <LoadingState message="Loading your library…" />}
+    {ready && results.isError && <ErrorState message={results.error instanceof ApiError && results.error.status === 400 ? 'Please check your library filters.' : results.data ? 'Could not refresh your library. The last saved results are shown.' : 'Could not load your library. Please try again.'}
+      retry={() => { void results.refetch() }} retrying={results.isFetching} />}
+    {ready && results.data && <>
+      {results.isFetching && <p role="status">Refreshing library…</p>}
       <p role="status" className="text-sm text-muted-foreground">{results.data.totalCount} games · Page {results.data.totalPages === 0 ? 0 : results.data.page} of {results.data.totalPages}</p>
       {results.data.items.length === 0
-        ? <div className="space-y-2 rounded-xl bg-muted p-6"><p>No games match your library filters.</p><p className="text-sm text-muted-foreground">Reset filters or discover a game to add.</p></div>
-        : <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {results.data.items.map(item => <li key={item.id}>
+        ? <EmptyState title={trimmed || status || priority || rating || platform ? 'No games match your library filters.' : 'Your library is empty.'}
+          description="Reset filters or discover a game to add.">
+          <Link to="/games" className="text-sm underline underline-offset-4">Discover games</Link>
+        </EmptyState>
+        : <ul className="grid grid-cols-1 gap-6 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {results.data.items.map(item => <li key={item.id} className="min-w-0">
             <Link to={`/library/${item.id}`} state={{ from: `/library?${params.toString()}` }} className="block h-full space-y-3 rounded-xl border bg-card p-3 shadow-sm focus-visible:outline-2 focus-visible:outline-offset-4">
               <GameCover url={item.game.coverUrl} name={item.game.name} />
               <div className="space-y-1 px-1 pb-2">
@@ -122,7 +125,7 @@ export function LibraryPage() {
             </Link>
           </li>)}
         </ul>}
-      <nav aria-label="Library pagination" className="flex gap-3">
+      <nav aria-label="Library pagination" className="flex flex-wrap gap-3">
         <Button variant="outline" disabled={page <= 1} onClick={() => movePage(page - 1)}>Previous page</Button>
         <Button variant="outline" disabled={page >= results.data.totalPages} onClick={() => movePage(page + 1)}>Next page</Button>
       </nav>
@@ -133,7 +136,7 @@ export function LibraryPage() {
 function FilterSelect({ label, value, onChange, children }: {
   label: string; value: string; onChange: (value: string) => void; children: React.ReactNode
 }) {
-  return <label className="space-y-1.5 text-sm font-medium">
+  return <label className="min-w-0 space-y-1.5 text-sm font-medium">
     <span>{label}</span><select className={libraryInputClass} value={value} onChange={event => onChange(event.target.value)}>{children}</select>
   </label>
 }

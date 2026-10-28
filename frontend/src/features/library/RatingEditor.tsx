@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNotify } from '@/components/feedback/toastContext'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { updateLibraryRating } from './libraryApi'
@@ -10,6 +11,7 @@ import { libraryInputClass } from './LibraryStatusFields'
 export function RatingEditor({ item }: { item: LibraryItem }) {
   const userId = useAuth().user?.id
   const client = useQueryClient()
+  const notify = useNotify()
   const active = useRef(false)
   const writing = useRef(false)
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
@@ -24,6 +26,7 @@ export function RatingEditor({ item }: { item: LibraryItem }) {
     mutationKey: ['library-write', userId, item.id],
     mutationFn: (rating: number | null) => updateLibraryRating(item.id, rating),
     onSuccess: async saved => {
+      notify('Rating updated.')
       if (active.current) {
         setDraft(null)
         client.setQueryData(libraryItemKey(userId, item.id), saved)
@@ -48,6 +51,7 @@ export function RatingEditor({ item }: { item: LibraryItem }) {
     <div className="max-w-xs space-y-2">
       <label htmlFor="edit-rating" className="text-sm font-medium">Your rating</label>
       <select id="edit-rating" className={libraryInputClass} value={value ?? ''} disabled={busy}
+        aria-invalid={Boolean(validationError)} aria-describedby={`rating-help${validationError || save.isError ? ' rating-error' : ''}`}
         onChange={event => {
           setDraft({ value: event.target.value === '' ? null : Number(event.target.value) })
           setValidationError(''); save.reset()
@@ -57,10 +61,10 @@ export function RatingEditor({ item }: { item: LibraryItem }) {
       </select>
     </div>
     <Button disabled={busy || value === item.rating} onClick={submit}>{save.isPending ? 'Saving rating…' : 'Save rating'}</Button>
-    {save.isSuccess && <p role="status">Rating saved.</p>}
-    {(validationError || save.isError) && <p role="alert" className="text-sm text-destructive">
+    {save.isSuccess && <p>Rating saved.</p>}
+    {(validationError || save.isError) && <p id="rating-error" role="alert" className="text-sm text-destructive">
       {validationError || 'Could not confirm the rating was saved. Your selection is kept; please try again.'}
     </p>}
-    <p className="text-sm text-muted-foreground">Choose Not rated and save to clear your rating.</p>
+    <p id="rating-help" className="text-sm text-muted-foreground">Choose Not rated and save to clear your rating.</p>
   </section>
 }

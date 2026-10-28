@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNotify } from '@/components/feedback/toastContext'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { updateLibraryNote } from './libraryApi'
@@ -10,6 +11,7 @@ import { libraryInputClass } from './LibraryStatusFields'
 export function NoteEditor({ item }: { item: LibraryItem }) {
   const userId = useAuth().user?.id
   const client = useQueryClient()
+  const notify = useNotify()
   const active = useRef(false)
   const writing = useRef(false)
   useEffect(() => { active.current = true; return () => { active.current = false } }, [])
@@ -24,6 +26,7 @@ export function NoteEditor({ item }: { item: LibraryItem }) {
     mutationKey: ['library-write', userId, item.id],
     mutationFn: (note: string | null) => updateLibraryNote(item.id, note),
     onSuccess: async saved => {
+      notify('Note updated.')
       if (active.current) {
         setDraft(null)
         client.setQueryData(libraryItemKey(userId, item.id), saved)
@@ -42,7 +45,7 @@ export function NoteEditor({ item }: { item: LibraryItem }) {
     <div className="space-y-2">
       <label htmlFor="edit-note" className="text-sm font-medium">Your personal note</label>
       <textarea id="edit-note" className={`${libraryInputClass} min-h-32 resize-y`} rows={5} value={value}
-        disabled={busy} aria-invalid={tooLong} aria-describedby="note-count note-help"
+        disabled={busy} aria-invalid={tooLong} aria-describedby={`note-count note-help${tooLong ? ' note-length-error' : ''}${save.isError ? ' note-save-error' : ''}`}
         onChange={event => { setDraft({ value: event.target.value }); save.reset() }} />
       <p id="note-count" className="text-sm text-muted-foreground">{value.length}/1,000 characters</p>
       <p id="note-help" className="text-sm text-muted-foreground">Plain text, up to 1,000 characters. Saving an empty note clears it. Notes are saved only when you choose Save note.</p>
@@ -54,8 +57,8 @@ export function NoteEditor({ item }: { item: LibraryItem }) {
       }}>Clear note</Button>
       <Button variant="outline" disabled={busy || draft === null} onClick={() => { setDraft(null); save.reset() }}>Discard note changes</Button>
     </div>
-    {save.isSuccess && <p role="status">Note saved.</p>}
-    {tooLong && <p role="alert" className="text-sm text-destructive">The note exceeds 1,000 characters. Shorten it before saving; your text has been kept.</p>}
-    {save.isError && <p role="alert" className="text-sm text-destructive">Could not confirm the note was saved. Your text is kept; please try again.</p>}
+    {save.isSuccess && <p>Note saved.</p>}
+    {tooLong && <p id="note-length-error" role="alert" className="text-sm text-destructive">The note exceeds 1,000 characters. Shorten it before saving; your text has been kept.</p>}
+    {save.isError && <p id="note-save-error" role="alert" className="text-sm text-destructive">Could not confirm the note was saved. Your text is kept; please try again.</p>}
   </section>
 }

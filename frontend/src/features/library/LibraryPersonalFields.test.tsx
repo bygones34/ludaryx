@@ -26,15 +26,38 @@ function setup(fetchMock: ReturnType<typeof vi.fn>) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.push(client)
   client.setQueryData(dashboardKey('owner'), { cached: true })
-  const view = render(<StrictMode><QueryClientProvider client={client}><MemoryRouter initialEntries={[`/library/${id}`]}>
-    <AuthContext.Provider value={{ status: 'authenticated',
-      user: { id: 'owner', username: 'player', displayName: 'Player', email: 'player@example.com', createdAt: item.addedAt },
+  const content = (owner: string | null) => <StrictMode><QueryClientProvider client={client}><MemoryRouter initialEntries={[`/library/${id}`]}>
+    <AuthContext.Provider value={{ status: owner ? 'authenticated' : 'anonymous',
+      user: owner ? { id: owner, username: 'player', displayName: 'Player', email: 'player@example.com', createdAt: item.addedAt } : null,
       login: vi.fn(), logout: vi.fn(), register: vi.fn(),
     }}><App /></AuthContext.Provider>
-  </MemoryRouter></QueryClientProvider></StrictMode>)
-  return { client, view }
+  </MemoryRouter></QueryClientProvider></StrictMode>
+  const view = render(content('owner'))
+  return { client, view, changeSession: (owner: string | null) => view.rerender(content(owner)) }
 }
 afterEach(() => { cleanup(); clients.splice(0).forEach(client => client.clear()); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+it.each([null, 'other-owner', 'owner'])('ignores a completed save from an ended session before sign-in as %s', async nextOwner => {
+  let finish!: (response: Response) => void
+  const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => init?.method === 'PATCH'
+    ? new Promise<Response>(resolve => { finish = resolve }) : Promise.resolve(json(item)))
+  const { client, changeSession } = setup(fetchMock)
+  fireEvent.change(await screen.findByLabelText('Your rating'), { target: { value: '10' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save rating' }))
+  await waitFor(() => expect(finish).toBeDefined())
+  changeSession(null)
+  client.clear()
+  expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument()
+  if (nextOwner) {
+    changeSession(nextOwner)
+    expect(await screen.findByLabelText('Your rating')).toHaveValue('9')
+  }
+  await act(async () => finish(json({ ...item, rating: 10 })))
+  expect(screen.queryByText('Rating updated.')).not.toBeInTheDocument()
+  expect(screen.queryByText('Rating saved.')).not.toBeInTheDocument()
+  if (nextOwner) expect(screen.getByLabelText('Your rating')).toHaveValue('9')
+  if (nextOwner !== 'owner') expect(client.getQueryData(libraryItemKey('owner', id))).toBeUndefined()
+})
 
 it.each([1, 10, null])('saves only rating %s, uses the server response and invalidates related lists', async rating => {
   let saved = item
@@ -52,6 +75,8 @@ it.each([1, 10, null])('saves only rating %s, uses the server response and inval
   fireEvent.change(selector, { target: { value: rating === null ? '' : String(rating) } })
   fireEvent.click(screen.getByRole('button', { name: 'Save rating' }))
   expect(await screen.findByText('Rating saved.')).toBeInTheDocument()
+  expect(screen.getByText('Rating saved.')).not.toHaveAttribute('role')
+  expect(screen.getByText('Rating updated.').closest('[aria-live]')).toHaveAttribute('aria-live', 'polite')
   const patches = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')
   expect(patches).toHaveLength(1)
   expect(JSON.parse(patches[0][1].body)).toEqual({ rating })
@@ -89,6 +114,7 @@ it('keeps a failed selection for retry without replacing saved data', async () =
   fireEvent.change(await screen.findByLabelText('Your rating'), { target: { value: '1' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save rating' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('Your selection is kept')
+  expect(screen.getByLabelText('Your rating')).toHaveAccessibleDescription(/Choose Not rated.*Could not confirm the rating was saved/)
   expect(screen.getByLabelText('Your rating')).toHaveValue('1')
   expect(client.getQueryData<LibraryItem>(libraryItemKey('owner', id))?.rating).toBe(9)
   fireEvent.click(screen.getByRole('button', { name: 'Save rating' }))
@@ -182,6 +208,7 @@ it('keeps oversized text visible and prevents saving it without silently truncat
   fireEvent.change(await screen.findByLabelText('Your personal note'), { target: { value: note } })
   expect(screen.getByLabelText('Your personal note')).toHaveValue(note)
   expect(screen.getByLabelText('Your personal note')).toHaveAttribute('aria-invalid', 'true')
+  expect(screen.getByLabelText('Your personal note')).toHaveAccessibleDescription(/1001\/1,000 characters.*exceeds 1,000 characters/)
   expect(screen.getByRole('alert')).toHaveTextContent('exceeds 1,000')
   expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled()
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
@@ -205,6 +232,7 @@ it('retains failed note text for retry and blocks conflicting writes while savin
   expect(screen.getByRole('button', { name: 'Remove from library' })).toBeDisabled()
   await act(async () => complete(json({ title: 'Unavailable' }, 503)))
   expect(await screen.findByRole('alert')).toHaveTextContent('Your text is kept')
+  expect(screen.getByLabelText('Your personal note')).toHaveAccessibleDescription(/Could not confirm the note was saved/)
   expect(screen.getByLabelText('Your personal note')).toHaveValue('Draft note')
   fireEvent.click(screen.getByRole('button', { name: 'Save note' }))
   await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(2))

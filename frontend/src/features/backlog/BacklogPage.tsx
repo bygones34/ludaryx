@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { DragDropProvider } from '@dnd-kit/react'
+import { Accessibility } from '@dnd-kit/dom'
 import { isSortable, useSortable } from '@dnd-kit/react/sortable'
 import { ArrowDown, ArrowUp, GripVertical } from 'lucide-react'
 import { Link } from 'react-router'
+import { useNotify } from '@/components/feedback/toastContext'
+import { LoadingState, EmptyState, ErrorState } from '@/components/feedback/QueryState'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/features/auth/useAuth'
 import { GameCover } from '@/features/games/GameCover'
@@ -15,6 +18,19 @@ import { libraryInputClass } from '@/features/library/LibraryStatusFields'
 import { ApiError } from '@/lib/apiClient'
 import { backlogKey, getBacklog, reorderBacklog, updateBacklogPriority } from './backlogApi'
 import type { BacklogItem, BacklogResponse } from './backlogApi'
+
+// Configure the public plugin already supplied by @dnd-kit/react's DOM runtime.
+const accessibilityOptions: NonNullable<ConstructorParameters<typeof Accessibility>[1]> = {
+  announcements: {
+    dragstart: ({ operation: { source } }) => source
+      ? `Picked up ${source.data.gameName}. Use arrow keys to move, Space or Enter to drop, and Escape to cancel.` : undefined,
+    dragover: ({ operation: { source } }) => source?.status === 'dragging' && isSortable(source)
+      ? `${source.data.gameName} is at position ${source.index + 1}.` : undefined,
+    dragend: ({ operation: { source }, canceled }) => source
+      ? canceled ? `Reordering ${source.data.gameName} cancelled.`
+        : `Dropped ${source.data.gameName}${isSortable(source) ? ` at position ${source.index + 1}` : ''}.` : undefined,
+  },
+}
 
 export function BacklogPage() {
   const userId = useAuth().user?.id
@@ -28,11 +44,8 @@ export function BacklogPage() {
       <p className="text-muted-foreground">Choose what to play next. Order and priority changes save automatically.</p>
       <Link to="/games" className="text-sm underline underline-offset-4">Discover more games</Link>
     </div>
-    {backlog.isPending && <p role="status">Loading your backlog…</p>}
-    {backlog.isError && !backlog.data && <div role="alert" className="space-y-3">
-      <p>Could not load your backlog. Please try again.</p>
-      <Button variant="outline" onClick={() => { void backlog.refetch() }}>Try again</Button>
-    </div>}
+    {backlog.isPending && <LoadingState message="Loading your backlog…" layout="rows" />}
+    {backlog.isError && !backlog.data && <ErrorState message="Could not load your backlog. Please try again." retry={() => { void backlog.refetch() }} retrying={backlog.isFetching} />}
     {backlog.data && <BacklogBoard key={userId} userId={userId} data={backlog.data}
       refreshing={backlog.isFetching} fetchFailed={backlog.isError} reload={() => backlog.refetch()} />}
   </section>
@@ -45,6 +58,7 @@ function BacklogBoard({ userId, data, refreshing, fetchFailed, reload }: {
   reload: () => Promise<{ isSuccess: boolean }>
 }) {
   const client = useQueryClient()
+  const notify = useNotify()
   const active = useRef(false)
   const writing = useRef(false)
   const board = useRef<HTMLDivElement>(null)
@@ -91,6 +105,7 @@ function BacklogBoard({ userId, data, refreshing, fetchFailed, reload }: {
       ? { kind: 'order' as const, response: await reorderBacklog(change.items) }
       : { kind: 'priority' as const, response: await updateBacklogPriority(change.item.id, change.value) },
     onSuccess: async (saved, change) => {
+      notify(saved.kind === 'order' ? 'Backlog updated.' : 'Priority updated.')
       if (active.current) {
         setDraft(null); setPriorityDraft(null); setRetry(null); setError(''); setNotice(saved.kind === 'order' ? 'Backlog order saved.' : 'Priority saved.')
         if (saved.kind === 'order') client.setQueryData(backlogKey(userId), saved.response)
@@ -154,17 +169,17 @@ function BacklogBoard({ userId, data, refreshing, fetchFailed, reload }: {
       <p>{data.items.length} games</p>
       <Button variant="outline" disabled={pendingWrites > 0 || refreshing || Boolean(dragSnapshot)} onClick={() => { void refresh() }}>Reload backlog</Button>
     </div>
-    {notice && <p role="status" aria-live="polite">{notice}</p>}
+    {notice && <p role={notice === 'Saving changes…' || notice === 'Backlog reloaded.' ? 'status' : undefined}>{notice}</p>}
     {refreshing && <p role="status">Refreshing backlog…</p>}
-    {(error || fetchFailed) && <div role="alert" className="space-y-3">
+    {(error || fetchFailed) && <div id="backlog-error" role="alert" className="space-y-3">
       <p>{error || 'Could not refresh the saved backlog. Reload it before making changes.'}</p>
       {retry && <Button variant="outline" disabled={blocked} onClick={() => submit(retry)}>Retry saving</Button>}
     </div>}
-    {items.length === 0 && <div className="space-y-2 rounded-xl bg-muted p-6">
-      <p>Your backlog is empty.</p><p>Add a game with Backlog status, or move a library game back to Backlog.</p>
+    {items.length === 0 && <EmptyState title="Your backlog is empty." description="Add a game with Backlog status, or move a library game back to Backlog.">
       <Link to="/library" className="text-sm underline underline-offset-4">Open your library</Link>
-    </div>}
-    <DragDropProvider onBeforeDragStart={event => { if (blocked || writing.current) event.preventDefault() }}
+    </EmptyState>}
+    <DragDropProvider plugins={defaults => defaults.map(plugin => plugin === Accessibility ? { plugin: Accessibility, options: accessibilityOptions } : plugin)}
+      onBeforeDragStart={event => { if (blocked || writing.current) event.preventDefault() }}
       onDragStart={event => {
         setDragSnapshot(items); setNotice('')
         const source = event.operation.source
@@ -180,33 +195,38 @@ function BacklogBoard({ userId, data, refreshing, fetchFailed, reload }: {
         {items.map((item, index) => <BacklogRow key={item.id} item={item} index={index} count={items.length}
           sortingDisabled={blocked || items.length < 2} controlsDisabled={blocked || Boolean(dragSnapshot)}
           priority={priorityDraft?.id === item.id ? priorityDraft.value : item.priority}
+          errorId={error || fetchFailed ? 'backlog-error' : undefined}
           onMove={to => move(index, to)} onPriority={value => submit({ kind: 'priority', item, value })} />)}
       </ol>
     </DragDropProvider>
   </div>
 }
 
-function BacklogRow({ item, index, count, sortingDisabled, controlsDisabled, priority, onMove, onPriority }: {
+function BacklogRow({ item, index, count, sortingDisabled, controlsDisabled, priority, errorId, onMove, onPriority }: {
   item: BacklogItem; index: number; count: number; sortingDisabled: boolean; controlsDisabled: boolean; priority: Priority | null
+  errorId?: string
   onMove: (index: number) => void; onPriority: (priority: Priority | null) => void
 }) {
-  const { ref, handleRef, isDragging } = useSortable({ id: item.id, index, disabled: sortingDisabled })
-  return <li ref={ref} data-backlog-id={item.id} className={`flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4 ${isDragging ? 'opacity-70' : ''}`}>
+  const { ref, handleRef, isDragging } = useSortable({ id: item.id, index, data: { gameName: item.game.name }, disabled: sortingDisabled })
+  return <li ref={ref} data-backlog-id={item.id} className={`grid min-w-0 grid-cols-[44px_48px_minmax(0,1fr)] items-center gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[44px_28px_48px_minmax(0,1fr)] lg:grid-cols-[44px_28px_48px_minmax(0,1fr)_260px] ${isDragging ? 'opacity-70' : ''}`}>
     <Button ref={handleRef} variant="outline" className="touch-none cursor-grab" disabled={sortingDisabled}
-      data-backlog-control="handle" aria-label={`Reorder ${item.game.name}`} aria-describedby="backlog-help"><GripVertical aria-hidden="true" /></Button>
-    <span className="w-6 text-center font-medium" aria-label={`Position ${index + 1}`}>{index + 1}</span>
-    <div className="w-12 shrink-0"><GameCover name={item.game.name} url={item.game.coverUrl} /></div>
-    <Link to={`/library/${item.id}`} state={{ from: '/backlog' }} className="min-w-32 flex-1 font-semibold underline underline-offset-4">{item.game.name}</Link>
-    <div className="w-40 space-y-1">
-      <label htmlFor={`priority-${item.id}`} className="text-sm">Priority for {item.game.name}</label>
-      <select id={`priority-${item.id}`} data-backlog-control="priority" className={libraryInputClass} value={priority ?? ''} disabled={controlsDisabled}
+      data-backlog-control="handle" aria-label={`Reorder ${item.game.name}`} aria-describedby={`backlog-help${errorId ? ` ${errorId}` : ''}`}><GripVertical aria-hidden="true" /></Button>
+    <span className="sr-only text-center font-medium sm:not-sr-only" aria-label={`Position ${index + 1}`}>{index + 1}</span>
+    <div className="w-12 shrink-0"><GameCover compact name={item.game.name} url={item.game.coverUrl} /></div>
+    <Link to={`/library/${item.id}`} state={{ from: '/backlog' }} className="min-w-0 font-semibold underline underline-offset-4">{item.game.name}</Link>
+    <div className="col-span-full grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-end gap-3 lg:col-span-1">
+    <label className="block min-w-0 space-y-1">
+      <span className="text-sm">Priority<span className="sr-only"> for {item.game.name}</span></span>
+      <select data-backlog-control="priority" className={libraryInputClass} value={priority ?? ''} disabled={controlsDisabled}
+        aria-describedby={errorId}
         onChange={event => onPriority((event.target.value || null) as Priority | null)}>
         <option value="">No priority</option>{priorities.map(value => <option key={value}>{value}</option>)}
       </select>
-    </div>
+    </label>
     <div className="flex gap-2">
       <Button variant="outline" data-backlog-control="up" disabled={controlsDisabled || index === 0} aria-label={`Move ${item.game.name} up`} onClick={() => onMove(index - 1)}><ArrowUp aria-hidden="true" /></Button>
       <Button variant="outline" data-backlog-control="down" disabled={controlsDisabled || index === count - 1} aria-label={`Move ${item.game.name} down`} onClick={() => onMove(index + 1)}><ArrowDown aria-hidden="true" /></Button>
+    </div>
     </div>
   </li>
 }

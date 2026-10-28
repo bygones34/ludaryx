@@ -108,6 +108,8 @@ Do not implement speculative features or architectural expansion during MVP work
 
 No generic repository or duplicate unit-of-work wrapper over EF Core. M4.3 approves the React 19-compatible `@dnd-kit/react` package for backlog drag and drop, with keyboard interaction and explicit Move up/Move down controls. Its sortable API and default pointer/keyboard sensors are sufficient; no additional direct dnd-kit packages are required. Exact versions belong in the project files and lockfile. Testcontainers, Mapster, Zustand, and MediatR are possible later evaluations, not authorization to introduce them.
 
+M7.3 explicitly approves React Bits SpotlightCard-TS-TW and Aurora-TS-TW as editable source components from the official registry, with local theme, performance, and accessibility adaptations. The installed versions require no additional runtime dependencies. Use Spotlight on dashboard statistics/previews and Aurora on wider auth screens; retain static surfaces/gradients when motion, input capabilities, or browser graphics support do not permit the effects. Preserve the upstream notice in `docs/react-bits-license.md`. Gradient Text remains optional and is not installed.
+
 ## 6. Domain Model
 
 ### 6.1 User account
@@ -497,6 +499,20 @@ Search uses debounce and loading/empty/error states. Library supports filtering,
 
 Implement responsive layouts at desktop/tablet/mobile sizes, system/light/dark themes, skeletons, toasts, confirmation dialogs, consistent spacing, basic accessibility, and keyboard navigation. Provide an accessible way to reorder backlog items alongside pointer interaction.
 
+### 13.1 M7 UI implementation decisions
+
+M7.1 established the following implementation policies for the existing frontend. The source-review inventory, step boundaries, and implementation evidence are in `docs/m7-foundation-decisions.md`; completed milestone acceptance is recorded in `docs/m7-acceptance.md`.
+
+- Preserve the existing Geist typography, semantic Tailwind/shadcn color tokens, routes, and feature structure. The owner-approved M7.3 visual direction adds coordinated violet/blue accents and the two React Bits source components recorded in Section 5. Polish the current product without adding product features, API/schema changes, a new design framework, or other dependencies. Extract shared UI only where it serves multiple real screens.
+- Theme preference is System (default), Light, or Dark. Store only this non-sensitive preference under `ludaryx.theme` in localStorage. Resolve System using prefers-color-scheme and follow subsequent system changes only in System mode. Apply the resolved class and native color-scheme at the document root before the initial application paint where possible. Invalid/unavailable storage falls back to System without breaking startup. Sync preference changes across tabs. The preference is browser-wide and survives logout; private query/notification data must not. Offer a labeled native selector on auth screens and the authenticated shell, including loading states.
+- Use mobile-first layouts and existing Tailwind breakpoints; verify core routes at 375px, 768px, and 1440px, with 200% browser zoom as an additional usability check. Keep the four primary navigation links visible with wrapping/stacking rather than adding a separate menu system. Long titles, platforms, notes, filter controls, dialogs, and backlog rows must wrap or shrink without viewport overflow. Keep the existing cover aspect ratio and constrain large detail covers on narrow screens. Recheck touch controls and persistent ordering behavior.
+- Use a small consistent spacing scale (page sections 6–8 Tailwind units, card padding 4–6, control gaps 2–4) and semantic tokens for light/dark surfaces, borders, text, focus, errors, and disabled states. Normal text contrast target is at least 4.5:1; large text and meaningful control boundaries/indicators target at least 3:1 against adjacent colors. Actual rendered contrast remains a verification task. Aim for at least 44px touch targets for primary, icon, and reorder actions without indiscriminately enlarging every compact UI variant.
+- Initial query loading uses bounded, layout-appropriate skeletons plus one accessible status message; decorative skeletons are hidden from assistive technology. Background refresh keeps previously loaded content with an explicit refreshing/error state. Empty library, no filter/search results, no active games, upstream failure, and invalid input remain distinct and offer the relevant existing action. No failure may be represented as zero statistics or an empty successful result.
+- Provide shared in-memory success toasts using existing frontend capabilities, without a new notification package. Toasts are dismissible, do not take focus, and auto-dismiss after five seconds; pause dismissal while hovered or focused. Announce each event once using a polite toast or inline status, with any remaining inline context non-duplicative. Errors, validation messages, recovery actions, and unsaved drafts remain visible inline; a transient toast cannot replace them. Do not place note contents or account details in notifications, and clear private notifications on logout/account changes. Preserve pending-write guards and ignore late notifications from an ended session.
+- Keep library-item removal as the existing destructive confirmation; do not add confirmation prompts to ordinary saves, backlog reorder, or logout. Preserve modal semantics, accessible title/description, focus containment and return, safe initial focus on Cancel, and Escape/cancel behavior when idle. Retain the existing protection against dismissal or repeat submission while removal is pending. No browser alert/confirm replacement is required.
+- Add a visible-on-focus skip link to the protected main region and consistent visible keyboard focus. On pathname navigation, move focus to the main region without changing auth redirect behavior; query-string filter updates, background refreshes, and form edits must not steal focus. Associate field errors/help with controls through IDs, aria-describedby and aria-invalid, preserving native labels and validation. Verify native dialog behavior in a real browser; JSDOM alone is insufficient. Retain dnd-kit keyboard interaction and explicit Move up/Move down controls with focus preservation. Honor reduced-motion preferences for skeletons and other nonessential animation.
+- M7 does not change ownership, token/cookie policy, server validation, note/rating limits, historical timestamps, dashboard calculations/list limits, filter URLs, or backlog order semantics. Retain existing retry, draft-preservation, cancellation, and private-cache cleanup behavior. The known Edge fetch-cancellation issue remains recorded; any reproduced functional blocker must be investigated and resolved or explicitly dispositioned before acceptance, not silently called fixed.
+
 ## 14. Testing Strategy
 
 Test meaningful behavior and critical failure modes rather than pursuing coverage percentages for their own sake.
@@ -601,7 +617,7 @@ M0 verifies connectivity against real local PostgreSQL without creating an empty
 
 **Definition of Done:** Dashboard correctly summarizes real current-user data in one response; list and average policies are documented.
 
-**Implementation status:** M6.1–M6.5 are complete and accepted as recorded in `docs/m6-acceptance.md` and `docs/m6-foundation-decisions.md`. The optional empty-account live check was not explicitly confirmed; automated empty-library checks passed. M7 has not started.
+**Implementation status:** M6.1–M6.5 are complete and accepted as recorded in `docs/m6-acceptance.md` and `docs/m6-foundation-decisions.md`. The optional empty-account live check was not explicitly confirmed; automated empty-library checks passed. M7 status is recorded below.
 
 ### M7 — UI / UX & Responsive
 
@@ -612,6 +628,8 @@ M0 verifies connectivity against real local PostgreSQL without creating an empty
 **Manual acceptance:** Inspect core screens at 375px, 768px, and 1440px; exercise themes, keyboard navigation, forms, dialogs, and backlog controls.
 
 **Definition of Done:** Desktop, tablet, mobile, and dark mode work; no major layout breaks; critical controls remain usable.
+
+**Implementation status:** M7.1–M7.6 are complete and accepted. Final automated verification on 2026-10-18 passed 305 backend tests, 141 frontend tests, both builds, frontend lint, and 48 integrated responsive/theme checks. The owner confirmed M7.5 native accessibility checks on 2026-10-18 and final live-browser acceptance on 2026-10-28 with no issues reported. See `docs/m7-acceptance.md` for scope and evidence limits. The historical Edge cancellation warning remains unresolved without a reproduced functional blocker; acceptance does not claim a browser-specific fix. M8 has not started.
 
 ### M8 — Quality & Hardening
 
@@ -712,6 +730,7 @@ The available source does not resolve the following details. Resolve and record 
 | M4 | Foundation decisions resolved in Sections 7, 8, and 10.5: full-list reorder, contiguous submitted positions, gap handling, responses, timestamps, serialized concurrency, and deferred uniqueness. M4.3 approves @dnd-kit/react as described in Section 5. |
 | M5 | Timestamp preservation and non-editable dates resolved in Section 7; rating and note editing UI remains M5 scope |
 | M6 | Foundation decisions resolved in Section 10.6: nullable average, one-decimal rounding away from zero, five-item lists, deterministic first-start ordering, saved backlog order, empty states, frontend route, and user-scoped cache refresh. Implementation and acceptance remain M6 scope. |
+| M7 | Complete and accepted on 2026-10-28: System/Light/Dark themes, responsive layouts, approved React Bits effects, shared feedback, keyboard/focus/error associations, contrast and reduced-motion handling. Section 13.1 defines the policies; docs/m7-acceptance.md records automated and owner acceptance evidence and the unresolved Edge warning. |
 | M9 | Domains, cookie topology, provider configuration, migration/recovery/backup procedures |
 
 This list prevents missing details from being mistaken for historical agreement. Once resolved, update the relevant normative sections and keep this document synchronized with implementation.

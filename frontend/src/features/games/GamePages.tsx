@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useParams, useSearchParams } from 'react-router'
-import { Button } from '@/components/ui/button'
+import { LoadingState, EmptyState, ErrorState } from '@/components/feedback/QueryState'
 import { ApiError } from '@/lib/apiClient'
 import { GameCover } from './GameCover'
 import { getGameDetails, searchGames } from './gamesApi'
@@ -15,10 +15,7 @@ function QueryError({ error, retry }: { error: Error; retry: () => void }) {
     : error instanceof ApiError && error.status === 400
       ? 'Please check your search or game ID.'
       : 'Could not load games. Please try again.'
-  return <div role="alert" className="space-y-3 rounded-xl border p-6">
-    <p>{message}</p>
-    <Button variant="outline" onClick={retry}>Try again</Button>
-  </div>
+  return <ErrorState message={message} retry={retry} />
 }
 
 export function GameSearchPage() {
@@ -51,20 +48,21 @@ export function GameSearchPage() {
     <div className="max-w-2xl space-y-2">
       <label htmlFor="game-search" className="text-sm font-medium">Search games</label>
       <input id="game-search" type="search" value={input} maxLength={100} autoComplete="off"
-        aria-describedby="search-help" className="w-full rounded-lg border bg-background px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-invalid={query.length > 0 && !valid} aria-describedby="search-help" className="w-full rounded-lg border border-input bg-background px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         placeholder="Try Elden Ring, Hades, or The Witcher"
         onChange={event => setParams(event.target.value ? { q: event.target.value } : {}, { replace: true })} />
       <p id="search-help" className="text-sm text-muted-foreground">Enter 2–100 characters. Up to 20 matches are shown.</p>
     </div>
-    {!valid && <p role="status" className="rounded-xl bg-muted p-6">Enter a game name with 2–100 characters to start exploring.</p>}
-    {valid && (!ready || results.isPending) && <p role="status">Searching games…</p>}
+    {!valid && <EmptyState title="Enter a game name with 2–100 characters to start exploring." />}
+    {valid && (!ready || results.isPending) && <LoadingState message="Searching games…" />}
     {ready && results.isError && <QueryError error={results.error} retry={() => { void results.refetch() }} />}
-    {ready && results.isSuccess && <>
+    {ready && results.data && <>
+      {results.isFetching && <p role="status">Refreshing games…</p>}
       <p role="status" className="text-sm text-muted-foreground">
         {results.data.items.length === 0 ? `No games found for “${query}”. Try another name.` : `${results.data.items.length} games found for “${query}”.`}
       </p>
-      <ul className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-        {results.data.items.map(game => <li key={game.igdbId}>
+      <ul className="grid grid-cols-1 gap-6 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {results.data.items.map(game => <li key={game.igdbId} className="min-w-0">
           <Link to={`/games/${game.igdbId}`} state={{ search: input }} className="block h-full space-y-3 rounded-xl border bg-card p-3 shadow-sm transition-shadow hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-4">
             <GameCover url={game.coverUrl} name={game.name} />
             <div className="space-y-1 px-1 pb-2">
@@ -96,11 +94,12 @@ export function GameDetailsPage() {
   return <section className="space-y-8">
     <Link to={backUrl} className="text-sm underline underline-offset-4">Back to search</Link>
     {!valid && <p role="alert">Invalid game ID. Choose a game from search results.</p>}
-    {valid && details.isPending && <p role="status">Loading game details…</p>}
+    {valid && details.isPending && <LoadingState message="Loading game details…" layout="details" />}
     {valid && details.isError && <QueryError error={details.error} retry={() => { void details.refetch() }} />}
-    {valid && details.isSuccess && <div className="grid items-start gap-8 md:grid-cols-[240px_1fr]">
-      <GameCover url={details.data.coverUrl} name={details.data.name} />
-      <div className="space-y-6">
+    {valid && details.data && details.isFetching && <p role="status">Refreshing game details…</p>}
+    {valid && details.data && <div className="grid items-start gap-6 md:grid-cols-[200px_minmax(0,1fr)] lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-8">
+      <div className="w-40 max-w-full sm:w-48 md:w-full"><GameCover url={details.data.coverUrl} name={details.data.name} /></div>
+      <div className="min-w-0 space-y-6">
         <h1 className="text-3xl font-semibold tracking-tight">{details.data.name}</h1>
         <AddToLibrary key={details.data.igdbId} game={details.data} />
         <dl className="space-y-4">

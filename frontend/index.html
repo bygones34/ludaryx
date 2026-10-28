@@ -3,6 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script id="theme-init">
+      (() => {
+        let preference = 'system'
+        try {
+          const stored = window.localStorage.getItem('ludaryx.theme')
+          if (stored === 'light' || stored === 'dark') preference = stored
+        } catch {}
+        let systemDark = false
+        try { systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches } catch {}
+        const dark = preference === 'dark' || (preference === 'system' && systemDark)
+        document.documentElement.classList.toggle('dark', dark)
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+      })()
+    </script>
     <link rel="icon" href="data:," />
     <title>Ludaryx</title>
   </head>

@@ -187,6 +187,8 @@ it('restores priority after a failed PATCH and supports retry', async () => {
   fireEvent.change(screen.getByLabelText('Priority for Alpha'), { target: { value: 'Low' } })
   await screen.findByRole('alert')
   expect(screen.getByLabelText('Priority for Alpha')).toHaveValue('High')
+  expect(screen.getByLabelText('Priority for Alpha')).toHaveAccessibleDescription(/Could not confirm the change was saved/)
+  expect(screen.getByRole('button', { name: 'Reorder Alpha' })).toHaveAccessibleDescription(/Drag a game's handle.*Could not confirm/)
   expect(screen.getByRole('button', { name: 'Retry saving' })).toBeEnabled()
 })
 

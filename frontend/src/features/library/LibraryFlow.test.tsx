@@ -213,7 +213,28 @@ it('supports empty results and recovers from a list failure through retry', asyn
   renderPage('/library')
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not load your library')
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByText('Your library is empty.')).toBeInTheDocument()
+})
+
+it('distinguishes no matching filters from an empty library and offers recovery', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(json(page([])))))
+  renderPage('/library?status=Playing')
   expect(await screen.findByText('No games match your library filters.')).toBeInTheDocument()
+  expect(screen.queryByText('Your library is empty.')).not.toBeInTheDocument()
+  expect(screen.getByRole('link', { name: 'Discover games' })).toHaveAttribute('href', '/games')
+  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
+  expect(await screen.findByText('Your library is empty.')).toBeInTheDocument()
+})
+
+it('retains loaded library results during a failed background refresh', async () => {
+  const fetchMock = vi.fn().mockResolvedValueOnce(json(page())).mockResolvedValue(json({ title: 'Unavailable' }, 503))
+  vi.stubGlobal('fetch', fetchMock)
+  const client = renderPage('/library')
+  expect(await screen.findByRole('heading', { name: 'Elden Ring' })).toBeInTheDocument()
+  await act(async () => { await client.invalidateQueries({ queryKey: libraryKey('owner') }) })
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not refresh your library. The last saved results are shown.')
+  expect(screen.getByRole('heading', { name: 'Elden Ring' })).toBeInTheDocument()
+  expect(screen.queryByText('Your library is empty.')).not.toBeInTheDocument()
 })
 
 it('rejects invalid URL filters and recovers through reset', async () => {
@@ -280,6 +301,30 @@ it('requires removal confirmation and cancel does not send DELETE', async () => 
   expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
 })
 
+it('contains keyboard focus and blocks Escape and repeated confirmation while removal is pending', async () => {
+  let finish!: (response: Response) => void
+  const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => init?.method === 'DELETE'
+    ? new Promise<Response>(resolve => { finish = resolve }) : Promise.resolve(json(item)))
+  vi.stubGlobal('fetch', fetchMock)
+  renderPage(`/library/${itemId}`)
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove from library' }))
+  const dialog = screen.getByRole('dialog')
+  const cancel = within(dialog).getByRole('button', { name: 'Cancel' })
+  const confirm = within(dialog).getByRole('button', { name: 'Confirm removal' })
+  cancel.focus(); fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true }); expect(confirm).toHaveFocus()
+  fireEvent.keyDown(confirm, { key: 'Tab' }); expect(cancel).toHaveFocus()
+  fireEvent.click(confirm); fireEvent.click(confirm)
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1))
+  const escape = new Event('cancel', { cancelable: true })
+  fireEvent(dialog, escape)
+  expect(escape.defaultPrevented).toBe(true)
+  expect(cancel).toBeDisabled(); expect(confirm).toBeDisabled()
+  await act(async () => finish(json({ title: 'Unavailable' }, 503)))
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove')
+  expect(cancel).toBeEnabled(); expect(confirm).toBeEnabled()
+  expect(screen.queryByText('Game removed from your library.')).not.toBeInTheDocument()
+})
+
 it('recovers from a removal failure and clears cached membership after confirmed deletion', async () => {
   let attempts = 0
   const fetchMock = vi.fn().mockImplementation((url: string, init: RequestInit) => {
@@ -298,7 +343,7 @@ it('recovers from a removal failure and clears cached membership after confirmed
   expect(await screen.findByRole('alert')).toHaveTextContent('Could not remove')
   fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm removal' }))
   expect(await screen.findByText('Elden Ring was removed from your library.')).toBeInTheDocument()
-  expect(await screen.findByText('No games match your library filters.')).toBeInTheDocument()
+  expect(await screen.findByText('Your library is empty.')).toBeInTheDocument()
   expect(client.getQueryData(libraryItemKey('owner', itemId))).toBeUndefined()
   expect(client.getQueryData<{ library: { isAdded: boolean } }>(gameDetailsKey('owner', 119133))?.library.isAdded).toBe(false)
   await waitFor(() => expect(client.getQueryState(dashboardKey('owner'))?.isInvalidated).toBe(true))

@@ -3,8 +3,8 @@
 Ludaryx is a personal game-library and backlog-management web application.
 **Your games. Your journey.**
 
-The project is being built milestone by milestone. **M0–M6 are complete and
-accepted; M7 (UI / UX & Responsive) has not started.**
+The project is being built milestone by milestone. **M0–M7 are complete and
+accepted. Next is M8 (Quality & Hardening).**
 
 ## Implemented features
 
@@ -23,13 +23,20 @@ accepted; M7 (UI / UX & Responsive) has not started.**
 - A dashboard after sign-in with total/status counts, average personal rating,
   and up to five Currently Playing and Up Next games. The summary refreshes after
   library changes and backlog reordering; each user sees only their own data.
+- Responsive desktop/tablet/mobile screens with System, Light, and Dark themes;
+  the browser-wide preference persists and follows OS changes in System mode.
+- React Bits Aurora on wider auth screens and Spotlight on dashboard cards,
+  with static fallbacks for reduced motion, input capability, or graphics limits.
+- Shared loading skeletons, actionable empty/error states, and dismissible success
+  notifications that pause on hover/focus and clear when the session changes.
+- Keyboard skip navigation, page focus, associated field errors, stronger control
+  contrast, and safe removal-dialog focus/pending behavior.
 
 The stack is .NET 10 / ASP.NET Core, EF Core with PostgreSQL, and React /
 TypeScript / Vite with React Router, TanStack Query, Tailwind CSS, and shadcn/ui.
 The backend follows pragmatic Clean Architecture with feature-based organization.
 
-Next: M7 UI/responsive polish, followed by M8 quality and hardening and M9
-production deployment.
+Next: M8 quality and hardening, followed by M9 production deployment.
 
 ## Prerequisites
 
@@ -126,12 +133,15 @@ after testing; the configured database role needs database creation permission.
 Automated IGDB tests use controlled responses. Frontend tests do not require a
 running API or live IGDB.
 
-The accepted M6 baseline recorded 304 passing backend tests and 85 passing
-frontend tests, successful builds/lint, and project-owner live browser acceptance.
-See the acceptance records for evidence and verification limits.
+The accepted M7 baseline records 305 passing backend tests and 141 passing
+frontend tests, successful builds/lint, and 48 integrated responsive/theme checks
+from 2026-10-18. The project owner confirmed final live-browser acceptance on
+2026-10-28. See [M7 acceptance](docs/m7-acceptance.md) for evidence and limits.
 
 A known Edge fetch-cancellation `AbortError` remains documented in development
-logs; no functional problem was reported during M6 acceptance. See the
+logs; no functional problem was reported during M7 acceptance. It was not
+reproduced in the available automated Chromium browser; an exact Edge/profile
+comparison remains unverified. See the
 [investigation](docs/browser-cancellation-investigation.md).
 
 ## Documentation
@@ -143,8 +153,12 @@ logs; no functional problem was reported during M6 acceptance. See the
 - Acceptance records: [M0](docs/m0-acceptance.md), [M1](docs/m1-acceptance.md),
   [M2](docs/m2-acceptance.md), [M3](docs/m3-acceptance.md),
   [M4](docs/m4-acceptance.md), [M5](docs/m5-acceptance.md),
-  [M6](docs/m6-acceptance.md).
+  [M6](docs/m6-acceptance.md), [M7](docs/m7-acceptance.md).
 - [M5 implementation decisions](docs/m5-foundation-decisions.md) — ratings,
   notes, lifecycle semantics, and verification details.
 - [M6 implementation decisions](docs/m6-foundation-decisions.md) — dashboard
   calculations, preview policies, refresh behavior, and verification details.
+- [M7 implementation decisions](docs/m7-foundation-decisions.md) — themes,
+  responsive layouts, React Bits integration, feedback, accessibility, and evidence.
+- [React Bits third-party notice](docs/react-bits-license.md) — retained upstream
+  license and local adaptations.
